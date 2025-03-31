@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proxy Server Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Proxy Server Dashboard</h1>
+            <div class="header-actions">
+                <button id="showGuide" class="button button-secondary" style="display: none; margin-right: 10px;">Show Guide</button>
+                <div class="status-badge" id="proxyStatus">Checking...</div>
+            </div>
+        </header>
+
+        <div class="usage-guide">
+            <h3>Quick Start Guide</h3>
+            <ol>
+                <li>Set your <strong>Target URL</strong> to the API service you want to proxy</li>
+                <li>Send API requests to <code id="apiUrlExample">http://localhost:3333/api/your-endpoint</code></li>
+                <li>Requests will be forwarded to <code id="targetUrlExample">https://api.example.com/your-endpoint</code></li>
+                <li>View logs and statistics in real-time below</li>
+            </ol>
+            <button id="hideGuide" class="button button-secondary">Hide Guide</button>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card status-card">
+                <h2>Server Configuration</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Target URL:</label>
+                        <div class="url-input-container">
+                            <input type="text" id="targetUrl" class="url-input" placeholder="Enter target URL (e.g., https://api.example.com)">
+                            <button id="saveTarget" class="button">Update</button>
+                        </div>
+                    </div>
+                    <div class="config-item">
+                        <label>Port:</label>
+                        <div class="port-input-container">
+                            <input type="number" id="portInput" class="port-input" min="1" max="65535" placeholder="Enter port number">
+                            <div class="port-buttons">
+                                <button id="updatePort" class="button">Update</button>
+                                <button id="newPort" class="button button-secondary">New Instance</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-item">
+                        <label>Start Time:</label>
+                        <span id="startTime">Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card endpoints-card">
+                <h2>Available Endpoints</h2>
+                <div class="endpoints-list">
+                    <div class="endpoint-item">
+                        <span class="endpoint-label">Dashboard:</span>
+                        <button id="dashboardUrl" class="endpoint-button">http://localhost:3333</button>
+                    </div>
+                    <div class="endpoint-item">
+                        <span class="endpoint-label">Status:</span>
+                        <button id="statusUrl" class="endpoint-button">http://localhost:3333/info</button>
+                    </div>
+                    <div class="endpoint-item">
+                        <span class="endpoint-label">API Proxy:</span>
+                        <button id="proxyUrl" class="endpoint-button">http://localhost:3333/api/*</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card headers-card">
+                <div class="card-header">
+                    <h2>Custom Headers</h2>
+                    <button id="addHeader" class="button button-secondary">Add Header</button>
+                </div>
+                <div id="headersContainer" class="headers-container">
+                    <div class="headers-placeholder">No custom headers yet...</div>
+                </div>
+                <div class="card-footer">
+                    <button id="saveHeaders" class="button">Save Headers</button>
+                </div>
+            </div>
+
+            <div class="card cache-card">
+                <h2>Cache Settings</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Cache Status:</label>
+                        <div class="toggle-container">
+                            <input type="checkbox" id="cacheToggle" class="toggle-checkbox">
+                            <label for="cacheToggle" class="toggle-label"></label>
+                            <span id="cacheStatus">Disabled</span>
+                        </div>
+                    </div>
+                    <div class="config-item">
+                        <label>Cache Duration:</label>
+                        <div class="duration-input-container">
+                            <input type="number" id="cacheDuration" class="number-input" min="1" max="60">
+                            <select id="cacheUnit">
+                                <option value="seconds">Seconds</option>
+                                <option value="minutes" selected>Minutes</option>
+                                <option value="hours">Hours</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="config-item">
+                        <button id="clearCache" class="button button-secondary">Clear Cache</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card stats-card">
+                <div class="card-header">
+                    <h2>Request Statistics</h2>
+                    <button id="resetStats" class="button button-secondary">Reset</button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Total Requests</div>
+                        <div id="totalRequests" class="stat-value">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Success Rate</div>
+                        <div id="successRate" class="stat-value">0%</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Error Rate</div>
+                        <div id="errorRate" class="stat-value">0%</div>
+                    </div>
+                </div>
+                <div class="stats-charts">
+                    <div class="chart-container">
+                        <h3>Methods</h3>
+                        <div id="methodsChart" class="chart"></div>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Status Codes</h3>
+                        <div id="statusChart" class="chart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card log-card">
+                <div class="log-header">
+                    <h2>Request Logs</h2>
+                    <div class="log-actions">
+                        <div class="search-wrapper">
+                            <input type="text" id="searchInput" class="search-input" placeholder="Search logs...">
+                        </div>
+                        <button id="clearLogs" class="button button-secondary">Clear Logs</button>
+                    </div>
+                </div>
+                <div class="log-container" id="logContainer">
+                    <div class="log-placeholder">No logs yet...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Headers Modal -->
+    <div id="headerModal" class="modal">
+        <div class="modal-content">
+            <h3>Add Custom Header</h3>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="headerName">Header Name:</label>
+                    <input type="text" id="headerName" class="text-input" placeholder="X-Custom-Header">
+                </div>
+                <div class="form-group">
+                    <label for="headerValue">Header Value:</label>
+                    <input type="text" id="headerValue" class="text-input" placeholder="header-value">
+                </div>
+                <div class="modal-buttons">
+                    <button id="cancelHeader" class="button button-secondary">Cancel</button>
+                    <button id="saveHeader" class="button">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html
