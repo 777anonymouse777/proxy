@@ -40,8 +40,29 @@ if (useHttps && fs.existsSync('./ssl/key.pem') && fs.existsSync('./ssl/cert.pem'
 // WebSocket server
 const wss = new WebSocket.Server({ server });
 
+// Track connected WebSocket clients
+wss.on('connection', (ws) => {
+    console.log('WebSocket client connected');
+    
+    // Send an initial welcome message
+    ws.send(JSON.stringify({
+        timestamp: new Date(),
+        method: 'SYSTEM',
+        url: 'WebSocket connection established',
+        status: 200
+    }));
+    
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+    });
+    
+    ws.on('close', () => {
+        console.log('WebSocket client disconnected');
+    });
+});
+
 // Configuration
-let PORT = parseInt(process.env.PORT) || 3333;
+const PORT = 3333;
 const HOST = process.env.HOST || "localhost";
 let API_SERVICE_URL = process.env.API_SERVICE_URL || "https://api.uat.aks1.io";
 
@@ -135,8 +156,7 @@ app.get('/info', (req, res) => {
         port: PORT,
         proxyStartTime: new Date().toISOString(),
         httpsEnabled: useHttps,
-        customHeaders: CUSTOM_HEADERS,
-        stats: requestStats
+        customHeaders: CUSTOM_HEADERS
     });
 });
 
@@ -228,76 +248,6 @@ app.post('/update-headers', authMiddleware, (req, res) => {
             success: false, 
             error: error.message 
         });
-    }
-});
-
-// Update port
-app.post('/update-port', authMiddleware, (req, res) => {
-    const { port, isNewInstance } = req.body;
-    if (!port || port < 1 || port > 65535) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(400).json({ success: false, error: 'Invalid port number' });
-    }
-
-    const newPort = parseInt(port);
-    if (newPort === PORT && !isNewInstance) {
-        res.setHeader('Content-Type', 'application/json');
-        return res.json({ success: true });
-    }
-
-    // Send response before closing the server
-    res.setHeader('Content-Type', 'application/json');
-    res.json({ 
-        success: true, 
-        message: isNewInstance ? `New instance will start on port ${newPort}` : `Server will restart on port ${newPort}`,
-        newPort: newPort
-    });
-
-    if (!isNewInstance) {
-        // Close existing server after sending response
-        setTimeout(() => {
-            server.close(() => {
-                PORT = newPort;
-                // Start server on new port
-                server.listen(PORT, HOST, () => {
-                    console.log(`Server restarted on port ${PORT}`);
-                });
-            });
-        }, 100);
-    } else {
-        // Start a new instance
-        const { spawn } = require('child_process');
-        const scriptPath = path.resolve(__dirname, 'proxy.js');
-        
-        // Create a new process with the specified port
-        const newServer = spawn('node', [scriptPath], {
-            env: { ...process.env, PORT: newPort.toString() },
-            stdio: 'inherit', // This will show logs in the parent process
-            detached: true, // Run in the background
-            cwd: __dirname // Ensure working directory is correct
-        });
-
-        // Unref the child process so parent can exit independently
-        newServer.unref();
-
-        console.log(`Started new instance on port ${newPort}`);
-        
-        // Wait a bit to ensure the new instance has started
-        setTimeout(() => {
-            // Open the new instance URL
-            const { exec } = require('child_process');
-            const protocol = useHttps ? 'https' : 'http';
-            const url = `${protocol}://${HOST}:${newPort}`;
-            const command = process.platform === 'darwin' ? `open "${url}"` : 
-                          process.platform === 'win32' ? `start "${url}"` : 
-                          `xdg-open "${url}"`;
-            
-            exec(command, (error) => {
-                if (error) {
-                    console.error('Error opening browser:', error);
-                }
-            });
-        }, 1000);
     }
 });
 
@@ -485,11 +435,36 @@ function setupProxyMiddleware() {
 
 // Broadcast log to all connected WebSocket clients
 function broadcastLog(logData) {
+    if (!logData || typeof logData !== 'object') {
+        console.error('Invalid log data:', logData);
+        return;
+    }
+    
+    // Ensure timestamp exists
+    if (!logData.timestamp) {
+        logData.timestamp = new Date();
+    }
+    
+    // Convert to string if needed
+    const logMessage = typeof logData === 'string' ? logData : JSON.stringify(logData);
+    
+    let activeClients = 0;
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(logData));
+            try {
+                client.send(logMessage);
+                activeClients++;
+            } catch (error) {
+                console.error('Error sending log to WebSocket client:', error);
+            }
         }
     });
+    
+    // Log to console if no clients are connected
+    if (activeClients === 0) {
+        console.log('Log (no WebSocket clients):', 
+            `${new Date(logData.timestamp).toLocaleTimeString()} ${logData.method} ${logData.url} ${logData.status}`);
+    }
 }
 
 // Initial proxy middleware setup

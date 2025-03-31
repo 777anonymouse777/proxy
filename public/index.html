@@ -40,13 +40,7 @@
                     </div>
                     <div class="config-item">
                         <label>Port:</label>
-                        <div class="port-input-container">
-                            <input type="number" id="portInput" class="port-input" min="1" max="65535" placeholder="Enter port number">
-                            <div class="port-buttons">
-                                <button id="updatePort" class="button">Update</button>
-                                <button id="newPort" class="button button-secondary">New Instance</button>
-                            </div>
-                        </div>
+                        <span id="portDisplay">3333</span>
                     </div>
                     <div class="config-item">
                         <label>Start Time:</label>
@@ -83,65 +77,6 @@
                 </div>
                 <div class="card-footer">
                     <button id="saveHeaders" class="button">Save Headers</button>
-                </div>
-            </div>
-
-            <div class="card cache-card">
-                <h2>Cache Settings</h2>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label>Cache Status:</label>
-                        <div class="toggle-container">
-                            <input type="checkbox" id="cacheToggle" class="toggle-checkbox">
-                            <label for="cacheToggle" class="toggle-label"></label>
-                            <span id="cacheStatus">Disabled</span>
-                        </div>
-                    </div>
-                    <div class="config-item">
-                        <label>Cache Duration:</label>
-                        <div class="duration-input-container">
-                            <input type="number" id="cacheDuration" class="number-input" min="1" max="60">
-                            <select id="cacheUnit">
-                                <option value="seconds">Seconds</option>
-                                <option value="minutes" selected>Minutes</option>
-                                <option value="hours">Hours</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="config-item">
-                        <button id="clearCache" class="button button-secondary">Clear Cache</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card stats-card">
-                <div class="card-header">
-                    <h2>Request Statistics</h2>
-                    <button id="resetStats" class="button button-secondary">Reset</button>
-                </div>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-label">Total Requests</div>
-                        <div id="totalRequests" class="stat-value">0</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Success Rate</div>
-                        <div id="successRate" class="stat-value">0%</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Error Rate</div>
-                        <div id="errorRate" class="stat-value">0%</div>
-                    </div>
-                </div>
-                <div class="stats-charts">
-                    <div class="chart-container">
-                        <h3>Methods</h3>
-                        <div id="methodsChart" class="chart"></div>
-                    </div>
-                    <div class="chart-container">
-                        <h3>Status Codes</h3>
-                        <div id="statusChart" class="chart"></div>
-                    </div>
                 </div>
             </div>
 
