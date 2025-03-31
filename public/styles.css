@@ -258,7 +258,7 @@ code {
     gap: 10px;
     align-items: center;
     font-family: 'Courier New', monospace;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
 }
 
@@ -274,6 +274,22 @@ code {
 .log-entry.error {
     border-left: 3px solid var(--danger-color);
     padding-left: 12px;
+}
+
+.log-entry.system {
+    background-color: rgba(52, 73, 94, 0.2);
+    border-left: 3px solid var(--accent-color);
+    padding-left: 12px;
+}
+
+.log-entry.system .log-method {
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.log-entry.system .log-url {
+    color: #ecf0f1;
+    font-style: italic;
 }
 
 .log-entry .log-time {
@@ -304,6 +320,10 @@ code {
 
 .log-entry.error .log-status {
     color: var(--danger-color);
+}
+
+.log-entry.system .log-status {
+    color: var(--accent-color);
 }
 
 .log-placeholder {
@@ -390,62 +410,60 @@ code {
 }
 
 .modal-content {
-    background: var(--card-bg);
+    background-color: var(--card-bg);
     border-radius: 10px;
-    padding: 30px;
+    padding: 20px;
     width: 90%;
     max-width: 500px;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-    border: 1px solid var(--border-color);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    position: relative;
+    box-sizing: border-box;
 }
 
 .modal-content h3 {
     margin-top: 0;
-    margin-bottom: 20px;
     color: var(--accent-color);
+    margin-bottom: 20px;
     font-size: 1.5em;
 }
 
 .modal-body {
-    margin-top: 20px;
-}
-
-.url-input-container {
-    position: relative;
+    margin-bottom: 15px;
     width: 100%;
 }
 
-.url-input {
+.form-group {
+    margin-bottom: 15px;
     width: 100%;
-    padding: 8px 90px 8px 10px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-color);
+}
+
+.text-input {
+    width: 100%;
+    padding: 10px;
+    background-color: #1a1a1a;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    background-color: #1a1a1a;
     color: var(--text-color);
-    font-size: 0.9em;
+    font-size: 1em;
+    box-sizing: border-box;
 }
 
-.url-input:focus {
+.text-input:focus {
     border-color: var(--accent-color);
     outline: none;
-}
-
-.url-input-container .button {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 10;
-    margin: 0;
-    padding: 6px 12px;
-    font-size: 0.85em;
-    border-radius: 4px;
 }
 
 .modal-buttons {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    margin-top: 20px;
 }
 
 .button-secondary {

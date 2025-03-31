@@ -96,6 +96,37 @@ function connectWebSocket() {
         
         // Fetch server info when connection is established
         fetchServerInfo();
+        
+        // Manually log the WebSocket connected message to the UI
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer) {
+            // Format timestamp
+            const timestamp = new Date();
+            const timeString = timestamp.toLocaleTimeString();
+            
+            // Create log entry for WebSocket connected
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry success';
+            logEntry.innerHTML = `
+                <span class="log-time">${timeString}</span>
+                <span class="log-method">SYSTEM</span>
+                <span class="log-url">WebSocket connected</span>
+                <span class="log-status">200</span>
+            `;
+            
+            // Insert at the top of the container
+            if (logContainer.firstChild) {
+                logContainer.insertBefore(logEntry, logContainer.firstChild);
+            } else {
+                logContainer.appendChild(logEntry);
+            }
+            
+            // Remove placeholder if it exists
+            const placeholder = logContainer.querySelector('.log-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+        }
     };
     
     ws.onclose = () => {
@@ -131,15 +162,27 @@ function connectWebSocket() {
                 
                 // Create log entry with proper formatting
                 const logEntry = document.createElement('div');
-                logEntry.className = `log-entry ${data.status >= 400 ? 'error' : 'success'}`;
                 
-                // Create log entry content with proper structure
-                logEntry.innerHTML = `
-                    <span class="log-time">${timeString}</span>
-                    <span class="log-method">${data.method}</span>
-                    <span class="log-url">${data.url}</span>
-                    <span class="log-status">${data.status}</span>
-                `;
+                // Special handling for SYSTEM messages
+                if (data.method === 'SYSTEM') {
+                    // Use success class for system messages to maintain green styling
+                    logEntry.className = 'log-entry success';
+                    logEntry.innerHTML = `
+                        <span class="log-time">${timeString}</span>
+                        <span class="log-method">${data.method}</span>
+                        <span class="log-url">${data.url}</span>
+                        <span class="log-status">${data.status || ''}</span>
+                    `;
+                } else {
+                    // Regular request logs
+                    logEntry.className = `log-entry ${data.status >= 400 ? 'error' : 'success'}`;
+                    logEntry.innerHTML = `
+                        <span class="log-time">${timeString}</span>
+                        <span class="log-method">${data.method}</span>
+                        <span class="log-url">${data.url}</span>
+                        <span class="log-status">${data.status}</span>
+                    `;
+                }
                 
                 // Insert at the top of the container for newest first
                 if (logContainer.firstChild) {
@@ -217,5 +260,161 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEndpointHandlers();
     setupTargetUrlUpdate();
     setupClearLogs();
+    setupHeadersModal();
+    setupGuideToggle();
     connectWebSocket();
 });
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
