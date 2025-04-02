@@ -5,6 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Proxy Server Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Additional styles for log files and error states */
+        .log-files-container {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 8px;
+            border-radius: 6px;
+            background-color: #f5f5f5;
+        }
+        
+        .log-file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .log-file-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .log-file-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .log-file-date, .log-file-size {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
+        .download-log-file {
+            padding: 6px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .download-log-file:hover {
+            background-color: #45a049;
+        }
+        
+        .log-files-placeholder {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .mocks-error {
+            text-align: center;
+            padding: 20px;
+            color: #d32f2f;
+            background-color: #ffebee;
+            border-radius: 6px;
+        }
+        
+        .mocks-error p {
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -97,7 +165,9 @@
                         <div class="search-wrapper">
                             <input type="text" id="searchInput" class="search-input" placeholder="Search logs...">
                         </div>
-                        <button id="clearLogs" class="button button-secondary">Clear Logs</button>
+                        <button id="saveLogs" class="button button-secondary">Save Logs</button>
+                        <button id="viewLogFiles" class="button button-secondary">View Saved</button>
+                        <button id="clearLogs" class="button button-secondary">Clear</button>
                     </div>
                 </div>
                 <div class="log-container" id="logContainer">
@@ -183,6 +253,21 @@
                 <div class="modal-buttons">
                     <button id="cancelMock" class="button button-secondary">Cancel</button>
                     <button id="saveMock" class="button">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Files Modal -->
+    <div id="logFilesModal" class="modal">
+        <div class="modal-content">
+            <h3>Saved Log Files</h3>
+            <div class="modal-body">
+                <div id="logFilesContainer" class="log-files-container">
+                    <div class="log-files-placeholder">Loading log files...</div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="closeLogFiles" class="button">Close</button>
                 </div>
             </div>
         </div>

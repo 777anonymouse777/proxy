@@ -1,0 +1,28 @@
+[
+  {
+    "id": "8a03a934-da36-4e1b-b97f-0d4d01832b03",
+    "path": "/configs/v1",
+    "method": "PUT",
+    "responseBody": {
+      "message": "Mocked response"
+    },
+    "statusCode": 200,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-02T09:25:17.254Z"
+  },
+  {
+    "id": "b332b4d5-ac07-47ba-b8bb-5f81190037a0",
+    "path": "/configs/v1",
+    "method": "GET",
+    "responseBody": {
+      "message": "NONONO"
+    },
+    "statusCode": 200,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-02T09:31:05.815Z"
+  }
+]

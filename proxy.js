@@ -22,8 +22,71 @@ const app = express();
 const useHttps = process.env.USE_HTTPS === 'true';
 let server;
 
+// Create data directory if it doesn't exist
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+    try {
+        fs.mkdirSync(dataDir, { recursive: true });
+        console.log('Created data directory for persistent storage');
+    } catch (error) {
+        console.error('Error creating data directory:', error);
+    }
+}
+
 // Store mock configurations
+const MOCKS_FILE_PATH = path.join(dataDir, 'mocks.json');
 let mocks = [];
+
+// Load mocks from file if it exists
+function loadMocksFromDisk() {
+    try {
+        console.log(`Checking for mocks file at: ${MOCKS_FILE_PATH}`);
+        if (fs.existsSync(MOCKS_FILE_PATH)) {
+            console.log('Mocks file found, loading...');
+            const data = fs.readFileSync(MOCKS_FILE_PATH, 'utf8');
+            console.log('Mocks file content:', data.substring(0, 100) + (data.length > 100 ? '...' : ''));
+            if (data.trim() === '') {
+                console.log('Mocks file is empty, starting with empty mocks');
+                mocks = [];
+                return;
+            }
+            
+            try {
+                mocks = JSON.parse(data);
+                console.log(`Loaded ${mocks.length} mocks from disk`);
+            } catch (parseError) {
+                console.error('Error parsing mocks JSON:', parseError);
+                // Create a backup of the corrupted file
+                const backupPath = `${MOCKS_FILE_PATH}.backup-${Date.now()}`;
+                fs.copyFileSync(MOCKS_FILE_PATH, backupPath);
+                console.log(`Created backup of corrupted mocks file at ${backupPath}`);
+                mocks = [];
+            }
+        } else {
+            console.log('No mocks file found, starting with empty mocks');
+            // Create an empty mocks file
+            saveMocksToDisk();
+            mocks = [];
+        }
+    } catch (error) {
+        console.error('Error loading mocks from disk:', error);
+        mocks = [];
+    }
+}
+
+// Save mocks to disk
+function saveMocksToDisk() {
+    try {
+        console.log(`Saving ${mocks.length} mocks to disk at ${MOCKS_FILE_PATH}`);
+        fs.writeFileSync(MOCKS_FILE_PATH, JSON.stringify(mocks, null, 2));
+        console.log(`Saved ${mocks.length} mocks to disk`);
+    } catch (error) {
+        console.error('Error saving mocks to disk:', error);
+    }
+}
+
+// Load mocks on startup
+loadMocksFromDisk();
 
 // Setup HTTPS if enabled
 if (useHttps && fs.existsSync('./ssl/key.pem') && fs.existsSync('./ssl/cert.pem')) {
@@ -356,6 +419,9 @@ app.post('/mocks', (req, res) => {
     
     mocks.push(newMock);
     
+    // Save updated mocks to disk
+    saveMocksToDisk();
+    
     res.json({ 
         success: true, 
         mock: newMock 
@@ -384,6 +450,9 @@ app.put('/mocks/:id', (req, res) => {
     if (queryParams !== undefined) mocks[mockIndex].queryParams = queryParams;
     if (bodyMatch !== undefined) mocks[mockIndex].bodyMatch = bodyMatch;
     
+    // Save updated mocks to disk
+    saveMocksToDisk();
+    
     res.json({ 
         success: true, 
         mock: mocks[mockIndex] 
@@ -404,6 +473,9 @@ app.delete('/mocks/:id', (req, res) => {
     
     // Remove mock from array
     const removedMock = mocks.splice(mockIndex, 1)[0];
+    
+    // Save updated mocks to disk
+    saveMocksToDisk();
     
     res.json({ 
         success: true, 
@@ -440,6 +512,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// Store logs in memory (limited to recent logs to avoid memory issues)
+const MAX_LOGS = 1000;
+let requestLogs = [];
 
 // Setup proxy middleware function
 function setupProxyMiddleware() {
@@ -656,7 +732,7 @@ function setupProxyMiddleware() {
     }
 }
 
-// Broadcast log to all connected WebSocket clients
+// Update broadcastLog function to store logs in memory
 function broadcastLog(logData) {
     if (!logData || typeof logData !== 'object') {
         console.error('Invalid log data:', logData);
@@ -668,8 +744,17 @@ function broadcastLog(logData) {
         logData.timestamp = new Date();
     }
     
+    // Sanitize log data to avoid circular references and non-serializable values
+    const sanitizedLogData = JSON.parse(JSON.stringify(logData));
+    
+    // Store log in memory (up to MAX_LOGS)
+    requestLogs.unshift(sanitizedLogData); // Add to the beginning
+    if (requestLogs.length > MAX_LOGS) {
+        requestLogs.pop(); // Remove oldest log
+    }
+    
     // Convert to string if needed
-    const logMessage = typeof logData === 'string' ? logData : JSON.stringify(logData);
+    const logMessage = JSON.stringify(sanitizedLogData);
     
     let activeClients = 0;
     wss.clients.forEach(client => {
@@ -685,11 +770,112 @@ function broadcastLog(logData) {
     
     // Log to console if no clients are connected
     if (activeClients === 0) {
-        const mockedStatus = logData.mocked ? ' [MOCKED]' : '';
+        const mockedStatus = sanitizedLogData.mocked ? ' [MOCKED]' : '';
         console.log('Log (no WebSocket clients):', 
-            `${new Date(logData.timestamp).toLocaleTimeString()} ${logData.method} ${logData.url} ${logData.status}${mockedStatus}`);
+            `${new Date(sanitizedLogData.timestamp).toLocaleTimeString()} ${sanitizedLogData.method} ${sanitizedLogData.url} ${sanitizedLogData.status}${mockedStatus}`);
     }
 }
+
+// Add endpoint to save logs
+app.post('/save-logs', (req, res) => {
+    try {
+        // Check if there are logs to save
+        if (requestLogs.length === 0) {
+            return res.json({
+                success: false,
+                message: 'No logs to save',
+                error: 'No logs have been captured yet'
+            });
+        }
+        
+        // Generate a filename with current date and time
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/:/g, '-').replace(/\..+/, '');
+        const filename = `logs_${timestamp}.json`;
+        const filePath = path.join(dataDir, filename);
+        
+        console.log(`Saving ${requestLogs.length} logs to ${filePath}`);
+        
+        // Create a log object with metadata
+        const logExport = {
+            metadata: {
+                exportedAt: now.toISOString(),
+                count: requestLogs.length,
+                target: API_SERVICE_URL
+            },
+            logs: requestLogs
+        };
+        
+        // Write logs to file
+        fs.writeFileSync(filePath, JSON.stringify(logExport, null, 2));
+        console.log(`Logs saved successfully to ${filename}`);
+        
+        res.json({
+            success: true,
+            message: `Saved ${requestLogs.length} logs to ${filename}`,
+            filename: filename
+        });
+    } catch (error) {
+        console.error('Error saving logs:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Add endpoint to get saved logs files
+app.get('/log-files', (req, res) => {
+    try {
+        const logFiles = fs.readdirSync(dataDir)
+            .filter(file => file.startsWith('logs_') && file.endsWith('.json'))
+            .map(file => {
+                const filePath = path.join(dataDir, file);
+                const stats = fs.statSync(filePath);
+                return {
+                    filename: file,
+                    timestamp: file.replace('logs_', '').replace('.json', ''),
+                    size: stats.size,
+                    createdAt: stats.birthtime
+                };
+            })
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        res.json({
+            success: true,
+            logFiles: logFiles
+        });
+    } catch (error) {
+        console.error('Error getting log files:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Add endpoint to download a specific log file
+app.get('/download-logs/:filename', (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const filePath = path.join(dataDir, filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                error: 'Log file not found'
+            });
+        }
+        
+        res.download(filePath);
+    } catch (error) {
+        console.error('Error downloading log file:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // Initial proxy middleware setup
 setupProxyMiddleware();
