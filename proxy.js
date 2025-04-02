@@ -166,19 +166,32 @@ app.get('/info', (req, res) => {
 // Add a direct test endpoint
 app.get('/test-proxy', async (req, res) => {
     try {
-        console.log('Testing JSONPlaceholder directly...');
-        const response = await axios.get(API_SERVICE_URL + '/posts/1');
-        console.log('Direct test successful:', response.status);
+        console.log('Testing target API directly...');
+        const testUrl = API_SERVICE_URL + '/posts/1';
+        console.log('Testing connection to:', testUrl);
+        
+        const response = await axios.get(testUrl, {
+            timeout: 5000,
+            validateStatus: false // Allow any status code to come back
+        });
+        
+        console.log('Direct test response:', response.status);
+        
         res.json({
-            success: true,
+            success: response.status >= 200 && response.status < 300,
+            targetUrl: API_SERVICE_URL,
             status: response.status,
-            data: response.data
+            statusText: response.statusText,
+            headers: response.headers,
+            data: response.data || { message: "Raw response received (not JSON)" }
         });
     } catch (error) {
         console.error('Direct test failed:', error.message);
         res.status(500).json({
             success: false,
-            error: error.message
+            targetUrl: API_SERVICE_URL,
+            error: error.message,
+            details: error.code || 'Unknown error'
         });
     }
 });
