@@ -439,6 +439,7 @@ function setupMocksModal() {
     const mockModalTitle = document.getElementById('mockModalTitle');
     
     if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
     // Ensure the modal is hidden on page load or refresh
     mockModal.style.display = 'none';
 
@@ -452,6 +453,27 @@ function setupMocksModal() {
         mockStatus.value = '200';
         mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
         mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
         currentEditMockId = null;
         mockModalTitle.textContent = 'Add API Mock';
         saveMockBtn.textContent = 'Add';
@@ -472,6 +494,49 @@ function setupMocksModal() {
         }
     });
     
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
     // Save mock when Save button is clicked
     saveMockBtn.addEventListener('click', () => {
         // Validate form
@@ -488,11 +553,41 @@ function setupMocksModal() {
             return;
         }
         
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
         const mockData = {
             path: mockPath.value,
+            method: selectedMethod,
             statusCode: parseInt(mockStatus.value || 200, 10),
             responseBody,
-            enabled: mockEnabled.checked
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
         };
         
         if (currentEditMockId) {
@@ -562,6 +657,48 @@ function setupMocksModal() {
                         mockModalTitle.textContent = 'Edit API Mock';
                         saveMockBtn.textContent = 'Update';
                         
+                        // Set method button
+                        document.querySelectorAll('.method-button').forEach(btn => {
+                            btn.classList.remove('active');
+                        });
+                        const methodButton = document.querySelector(`.method-button[data-method="${mock.method || 'GET'}"]`);
+                        if (methodButton) methodButton.classList.add('active');
+                        
+                        // Show/hide body match container based on method
+                        const method = mock.method || 'GET';
+                        const bodyMatchSection = document.querySelector('.body-match-section');
+                        if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                            bodyMatchSection.style.display = 'block';
+                            
+                            // Set body match if exists
+                            if (mock.bodyMatch) {
+                                document.getElementById('bodyMatchInput').value = 
+                                    JSON.stringify(mock.bodyMatch, null, 2);
+                            } else {
+                                document.getElementById('bodyMatchInput').value = '';
+                            }
+                        } else {
+                            bodyMatchSection.style.display = 'none';
+                        }
+                        
+                        // Populate query parameters
+                        const queryParamsContainer = document.getElementById('queryParamsContainer');
+                        queryParamsContainer.innerHTML = '';
+                        
+                        if (mock.queryParams && mock.queryParams.length > 0) {
+                            mock.queryParams.forEach(param => {
+                                const paramId = Date.now() + Math.random();
+                                const paramRow = document.createElement('div');
+                                paramRow.className = 'param-row';
+                                paramRow.innerHTML = `
+                                    <input type="text" class="param-key" placeholder="Parameter name" value="${param.key || ''}">
+                                    <input type="text" class="param-value" placeholder="Parameter value" value="${param.value || ''}">
+                                    <button class="remove-param" data-id="${paramId}">×</button>
+                                `;
+                                queryParamsContainer.appendChild(paramRow);
+                            });
+                        }
+                        
                         // Show modal
                         mockModal.style.display = 'flex';
                     }
@@ -617,16 +754,22 @@ function setupMocksModal() {
     if (mocksContainer) {
         mocksContainer.addEventListener('click', (event) => {
             const target = event.target;
+            let actionButton = target;
+            
+            // Check if we clicked on the SVG or path inside the button
+            if (target.tagName === 'svg' || target.tagName === 'path') {
+                actionButton = target.closest('button');
+            }
             
             // Edit button
-            if (target.classList.contains('mock-action-edit')) {
-                const mockId = target.dataset.id;
+            if (actionButton && actionButton.classList.contains('mock-action-edit')) {
+                const mockId = actionButton.getAttribute('data-id');
                 editMock(mockId);
             }
             
             // Delete button
-            if (target.classList.contains('mock-action-delete')) {
-                const mockId = target.dataset.id;
+            if (actionButton && actionButton.classList.contains('mock-action-delete')) {
+                const mockId = actionButton.getAttribute('data-id');
                 deleteMock(mockId);
             }
             
@@ -673,6 +816,7 @@ function updateMocksUI(mocks) {
         html += `
             <div class="mock-item ${mock.enabled ? '' : 'disabled'}">
                 <div class="mock-details">
+                    <span class="mock-method">${mock.method || 'GET'}</span>
                     <span class="mock-path">${mock.path}</span>
                     <span class="mock-status">${mock.statusCode}</span>
                 </div>

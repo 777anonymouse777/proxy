@@ -319,7 +319,7 @@ app.get('/mocks', (req, res) => {
 });
 
 app.post('/mocks', (req, res) => {
-    const { path, responseBody, statusCode, enabled } = req.body;
+    const { path, method, responseBody, statusCode, enabled, queryParams, bodyMatch } = req.body;
     
     if (!path) {
         return res.status(400).json({ 
@@ -332,9 +332,12 @@ app.post('/mocks', (req, res) => {
     const newMock = {
         id: uuidv4(),
         path,
+        method: method || 'GET',
         responseBody: responseBody || {},
         statusCode: statusCode || 200,
         enabled: enabled !== undefined ? enabled : true,
+        queryParams: queryParams || [],
+        bodyMatch: bodyMatch || null,
         createdAt: new Date().toISOString()
     };
     
@@ -348,7 +351,7 @@ app.post('/mocks', (req, res) => {
 
 app.put('/mocks/:id', (req, res) => {
     const { id } = req.params;
-    const { path, responseBody, statusCode, enabled } = req.body;
+    const { path, method, responseBody, statusCode, enabled, queryParams, bodyMatch } = req.body;
     
     const mockIndex = mocks.findIndex(mock => mock.id === id);
     
@@ -361,9 +364,12 @@ app.put('/mocks/:id', (req, res) => {
     
     // Update mock with new data
     if (path !== undefined) mocks[mockIndex].path = path;
+    if (method !== undefined) mocks[mockIndex].method = method;
     if (responseBody !== undefined) mocks[mockIndex].responseBody = responseBody;
     if (statusCode !== undefined) mocks[mockIndex].statusCode = statusCode;
     if (enabled !== undefined) mocks[mockIndex].enabled = enabled;
+    if (queryParams !== undefined) mocks[mockIndex].queryParams = queryParams;
+    if (bodyMatch !== undefined) mocks[mockIndex].bodyMatch = bodyMatch;
     
     res.json({ 
         success: true, 
@@ -447,43 +453,104 @@ function setupProxyMiddleware() {
             return next();
         }
 
-        // Check if we have a mock for this path
+        // Log the request regardless if it's mocked or actual
+        const timestamp = new Date().toISOString();
+        requestStats.total++;
+        const method = req.method;
+        requestStats.methods[method] = (requestStats.methods[method] || 0) + 1;
+        
+        // Prepare log data that will be updated with status later
+        const logData = {
+            timestamp,
+            method: req.method,
+            url: req.url,
+            userAgent: req.headers['user-agent']
+        };
+
+        // Check if we have a mock for this path and method
         const matchingMock = mocks.find(mock => {
+            // Skip disabled mocks
+            if (!mock.enabled) return false;
+            
+            // Check if method matches (default to GET if not specified)
+            if (mock.method && mock.method !== req.method) return false;
+            
             // Match exact path or with wildcard support
-            if (mock.enabled && (
-                mock.path === req.path || 
-                (mock.path.endsWith('*') && req.path.startsWith(mock.path.slice(0, -1)))
-            )) {
-                return true;
+            const pathMatches = mock.path === req.path || 
+                (mock.path.endsWith('*') && req.path.startsWith(mock.path.slice(0, -1)));
+            
+            if (!pathMatches) return false;
+            
+            // Check query parameters if defined
+            if (mock.queryParams && mock.queryParams.length > 0) {
+                // Get query parameters from the request
+                const urlObj = new URL(req.url, `http://${req.headers.host}`);
+                const queryParams = urlObj.searchParams;
+                
+                // Check if all required query parameters match
+                for (const param of mock.queryParams) {
+                    if (param.key) {
+                        const paramValue = queryParams.get(param.key);
+                        // If value is specified, it must match exactly
+                        if (param.value && paramValue !== param.value) {
+                            return false;
+                        }
+                        // If no value but key is required
+                        if (!param.value && !paramValue) {
+                            return false;
+                        }
+                    }
+                }
             }
-            return false;
+            
+            // Check request body for POST/PUT/PATCH
+            if ((req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') && 
+                mock.bodyMatch && Object.keys(mock.bodyMatch).length > 0) {
+                
+                // Compare request body with expected body
+                for (const [key, value] of Object.entries(mock.bodyMatch)) {
+                    if (!req.body || req.body[key] !== value) {
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
         });
 
         if (matchingMock) {
             console.log(`Mocking response for: ${req.method} ${req.path}`);
             
-            // Update request stats
-            requestStats.total++;
-            const method = req.method;
-            requestStats.methods[method] = (requestStats.methods[method] || 0) + 1;
-            
             // Update status code stats
             const statusCode = matchingMock.statusCode.toString();
             requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
             
-            // Log the mocked request
-            const logData = {
-                timestamp: new Date().toISOString(),
-                method: req.method,
-                url: req.url,
-                status: matchingMock.statusCode,
-                mocked: true
-            };
+            // Update log data with status and mocked flag
+            logData.status = matchingMock.statusCode;
+            logData.mocked = true;
+            
+            // Broadcast the log
             broadcastLog(logData);
             
             // Return the mock response
             return res.status(matchingMock.statusCode).json(matchingMock.responseBody);
         }
+        
+        // Store the original end method to intercept it
+        const originalEnd = res.end;
+        
+        // Override the end method to capture the response status
+        res.end = function(chunk, encoding) {
+            // Update the log data with actual response status
+            logData.status = res.statusCode;
+            logData.mocked = false;
+            
+            // Broadcast the complete log
+            broadcastLog(logData);
+            
+            // Call the original end method
+            return originalEnd.call(this, chunk, encoding);
+        };
         
         // No mock found, continue to proxy
         next();
@@ -605,8 +672,9 @@ function broadcastLog(logData) {
     
     // Log to console if no clients are connected
     if (activeClients === 0) {
+        const mockedStatus = logData.mocked ? ' [MOCKED]' : '';
         console.log('Log (no WebSocket clients):', 
-            `${new Date(logData.timestamp).toLocaleTimeString()} ${logData.method} ${logData.url} ${logData.status}`);
+            `${new Date(logData.timestamp).toLocaleTimeString()} ${logData.method} ${logData.url} ${logData.status}${mockedStatus}`);
     }
 }
 

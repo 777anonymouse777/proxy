@@ -134,17 +134,44 @@
             <h3 id="mockModalTitle">Add API Mock</h3>
             <div class="modal-body">
                 <div class="form-group">
+                    <label>HTTP Method:</label>
+                    <div class="method-buttons">
+                        <button class="method-button active" data-method="GET">GET</button>
+                        <button class="method-button" data-method="POST">POST</button>
+                        <button class="method-button" data-method="PUT">PUT</button>
+                        <button class="method-button" data-method="DELETE">DELETE</button>
+                        <button class="method-button" data-method="PATCH">PATCH</button>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label for="mockPath">Path:</label>
                     <input type="text" id="mockPath" class="text-input" placeholder="/api/endpoint or /api/users/*">
                 </div>
+                
                 <div class="form-group">
-                    <label for="mockStatus">Status Code:</label>
+                    <label>Query Parameters:</label>
+                    <button id="addQueryParam" class="button button-small">Add Parameter</button>
+                    <div id="queryParamsContainer" class="params-container">
+                        <!-- Query parameters will be added here dynamically -->
+                    </div>
+                </div>
+                
+                <div class="form-group body-match-section" style="display: none;">
+                    <label for="bodyMatchInput">Match Request Body (JSON):</label>
+                    <textarea id="bodyMatchInput" class="text-area" placeholder='{"key": "value"}'></textarea>
+                    <div class="help-text">Only requests with matching values will be mocked</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="mockStatus">Response Status Code:</label>
                     <input type="number" id="mockStatus" class="text-input" placeholder="200" value="200">
                 </div>
+                
                 <div class="form-group">
                     <label for="mockResponse">Response Body (JSON):</label>
                     <textarea id="mockResponse" class="text-area" placeholder='{"message": "Mocked response"}'></textarea>
                 </div>
+                
                 <div class="form-group">
                     <label class="toggle-label">
                         <input type="checkbox" id="mockEnabled" checked>
@@ -152,6 +179,7 @@
                         Enabled
                     </label>
                 </div>
+                
                 <div class="modal-buttons">
                     <button id="cancelMock" class="button button-secondary">Cancel</button>
                     <button id="saveMock" class="button">Add</button>

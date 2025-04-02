@@ -425,13 +425,15 @@ code {
 
 .modal-content {
     background-color: var(--card-bg);
-    border-radius: 10px;
+    margin: 2% auto;
     padding: 20px;
+    border-radius: 8px;
     width: 90%;
-    max-width: 500px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    max-height: 85vh; /* Limit height */
+    overflow-y: auto; /* Add scrollbar when needed */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     position: relative;
-    box-sizing: border-box;
 }
 
 .modal-content h3 {
@@ -1392,4 +1394,83 @@ select:focus {
     font-family: 'Courier New', monospace;
     resize: vertical;
     margin: 0 auto; /* Center the input box */
+}
+
+/* Add styles for the method buttons */
+.method-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.method-button {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.method-button.active {
+    background-color: var(--primary);
+    color: white;
+    font-weight: bold;
+}
+
+/* Styles for query parameters */
+.params-container {
+    margin: 10px 0;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.param-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.param-key, .param-value {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.remove-param {
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 5px;
+}
+
+.button-small {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.help-text {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+/* Style for displaying method in mock list */
+.mock-method {
+    background-color: var(--primary);
+    color: white;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 8px;
+    min-width: 50px;
+    text-align: center;
 }
