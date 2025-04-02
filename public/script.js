@@ -174,12 +174,16 @@ function connectWebSocket() {
                         <span class="log-status">${data.status || ''}</span>
                     `;
                 } else {
-                    // Regular request logs
+                    // Regular request logs with inline mocked indicator
                     logEntry.className = `log-entry ${data.status >= 400 ? 'error' : 'success'}`;
+                    
+                    // Use unique class name to avoid style conflicts
+                    const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
+                    
                     logEntry.innerHTML = `
                         <span class="log-time">${timeString}</span>
                         <span class="log-method">${data.method}</span>
-                        <span class="log-url">${data.url}</span>
+                        <span class="log-url">${data.url}${mockedText}</span>
                         <span class="log-status">${data.status}</span>
                     `;
                 }
