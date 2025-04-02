@@ -244,25 +244,33 @@ function setupTargetUrlUpdate() {
 
 // Handle clear logs button
 function setupClearLogs() {
-    const clearLogsButton = document.getElementById('clearLogs');
-    const logContainer = document.getElementById('logContainer');
+    const clearLogsBtn = document.getElementById('clearLogs');
+    if (!clearLogsBtn) return;
     
-    if (clearLogsButton && logContainer) {
-        clearLogsButton.addEventListener('click', () => {
+    clearLogsBtn.addEventListener('click', () => {
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer) {
             // Clear all logs
             logContainer.innerHTML = '<div class="log-placeholder">No logs yet...</div>';
-        });
-    }
+        }
+    });
 }
 
-// Initialize the application
+// Initialize everything when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
     setupEndpointHandlers();
     setupTargetUrlUpdate();
     setupClearLogs();
     setupHeadersModal();
+    setupMocksModal();
     setupGuideToggle();
+    
+    // Connect to WebSocket for real-time logs
     connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
 });
 
 // Setup headers modal functionality
@@ -417,4 +425,277 @@ function setupGuideToggle() {
             showGuideButton.style.display = 'none';
         });
     }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        } else {
+            // Add new mock
+            fetch('/mocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding mock:', error);
+                alert('Error adding mock');
+            });
+        }
+    });
+    
+    // Edit mock
+    function editMock(mockId) {
+        // Find mock by ID
+        fetch('/mocks')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const mock = data.mocks.find(m => m.id === mockId);
+                    if (mock) {
+                        // Populate form with mock data
+                        mockPath.value = mock.path;
+                        mockStatus.value = mock.statusCode;
+                        mockResponse.value = JSON.stringify(mock.responseBody, null, 2);
+                        mockEnabled.checked = mock.enabled;
+                        currentEditMockId = mockId;
+                        mockModalTitle.textContent = 'Edit API Mock';
+                        saveMockBtn.textContent = 'Update';
+                        
+                        // Show modal
+                        mockModal.style.display = 'flex';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching mock details:', error);
+            });
+    }
+    
+    // Toggle mock enabled state
+    function toggleMock(mockId, enabled) {
+        fetch(`/mocks/${mockId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Refresh mocks list
+                fetchMocks();
+            }
+        })
+        .catch(error => {
+            console.error('Error toggling mock:', error);
+        });
+    }
+    
+    // Delete mock
+    function deleteMock(mockId) {
+        if (confirm('Are you sure you want to delete this mock?')) {
+            fetch(`/mocks/${mockId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting mock:', error);
+            });
+        }
+    }
+    
+    // Setup event delegation for mock actions
+    const mocksContainer = document.getElementById('mocksContainer');
+    if (mocksContainer) {
+        mocksContainer.addEventListener('click', (event) => {
+            const target = event.target;
+            
+            // Edit button
+            if (target.classList.contains('mock-action-edit')) {
+                const mockId = target.dataset.id;
+                editMock(mockId);
+            }
+            
+            // Delete button
+            if (target.classList.contains('mock-action-delete')) {
+                const mockId = target.dataset.id;
+                deleteMock(mockId);
+            }
+            
+            // Toggle checkbox
+            if (target.classList.contains('mock-toggle')) {
+                const mockId = target.dataset.id;
+                const enabled = target.checked;
+                toggleMock(mockId, enabled);
+            }
+        });
+    }
+    
+    // Initial fetch of mocks
+    fetchMocks();
+}
+
+// Fetch and display mocks
+function fetchMocks() {
+    fetch('/mocks')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateMocksUI(data.mocks);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching mocks:', error);
+        });
+}
+
+// Update mocks UI
+function updateMocksUI(mocks) {
+    const mocksContainer = document.getElementById('mocksContainer');
+    if (!mocksContainer) return;
+    
+    if (mocks.length === 0) {
+        mocksContainer.innerHTML = '<div class="mocks-placeholder">No mocks configured yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    
+    mocks.forEach(mock => {
+        html += `
+            <div class="mock-item ${mock.enabled ? '' : 'disabled'}">
+                <div class="mock-details">
+                    <span class="mock-path">${mock.path}</span>
+                    <span class="mock-status">${mock.statusCode}</span>
+                </div>
+                <div class="mock-actions">
+                    <label class="toggle-label">
+                        <input type="checkbox" class="mock-toggle" data-id="${mock.id}" ${mock.enabled ? 'checked' : ''}>
+                        <span class="toggle-switch"></span>
+                    </label>
+                    <button class="mock-action-btn mock-action-edit" data-id="${mock.id}" title="Edit Mock">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/>
+                        </svg>
+                    </button>
+                    <button class="mock-action-btn mock-action-delete" data-id="${mock.id}" title="Delete Mock">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    mocksContainer.innerHTML = html;
 }

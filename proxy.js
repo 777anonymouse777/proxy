@@ -22,6 +22,9 @@ const app = express();
 const useHttps = process.env.USE_HTTPS === 'true';
 let server;
 
+// Store mock configurations
+let mocks = [];
+
 // Setup HTTPS if enabled
 if (useHttps && fs.existsSync('./ssl/key.pem') && fs.existsSync('./ssl/cert.pem')) {
     const options = {
@@ -307,6 +310,88 @@ app.post('/clear-cache', authMiddleware, (req, res) => {
     });
 });
 
+// Mocks management routes
+app.get('/mocks', (req, res) => {
+    res.json({ 
+        success: true, 
+        mocks: mocks 
+    });
+});
+
+app.post('/mocks', (req, res) => {
+    const { path, responseBody, statusCode, enabled } = req.body;
+    
+    if (!path) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Path is required' 
+        });
+    }
+    
+    // Create new mock with unique ID
+    const newMock = {
+        id: uuidv4(),
+        path,
+        responseBody: responseBody || {},
+        statusCode: statusCode || 200,
+        enabled: enabled !== undefined ? enabled : true,
+        createdAt: new Date().toISOString()
+    };
+    
+    mocks.push(newMock);
+    
+    res.json({ 
+        success: true, 
+        mock: newMock 
+    });
+});
+
+app.put('/mocks/:id', (req, res) => {
+    const { id } = req.params;
+    const { path, responseBody, statusCode, enabled } = req.body;
+    
+    const mockIndex = mocks.findIndex(mock => mock.id === id);
+    
+    if (mockIndex === -1) {
+        return res.status(404).json({ 
+            success: false, 
+            error: 'Mock not found' 
+        });
+    }
+    
+    // Update mock with new data
+    if (path !== undefined) mocks[mockIndex].path = path;
+    if (responseBody !== undefined) mocks[mockIndex].responseBody = responseBody;
+    if (statusCode !== undefined) mocks[mockIndex].statusCode = statusCode;
+    if (enabled !== undefined) mocks[mockIndex].enabled = enabled;
+    
+    res.json({ 
+        success: true, 
+        mock: mocks[mockIndex] 
+    });
+});
+
+app.delete('/mocks/:id', (req, res) => {
+    const { id } = req.params;
+    
+    const mockIndex = mocks.findIndex(mock => mock.id === id);
+    
+    if (mockIndex === -1) {
+        return res.status(404).json({ 
+            success: false, 
+            error: 'Mock not found' 
+        });
+    }
+    
+    // Remove mock from array
+    const removedMock = mocks.splice(mockIndex, 1)[0];
+    
+    res.json({ 
+        success: true, 
+        mock: removedMock 
+    });
+});
+
 // Error handling middleware - Add this before the static file middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err);
@@ -345,6 +430,64 @@ function setupProxyMiddleware() {
     });
 
     console.log('Setting up proxy middleware to target:', API_SERVICE_URL);
+
+    // Add middleware to check for mocks before proxying
+    app.use((req, res, next) => {
+        // Skip checking for mocks for the dashboard and API routes we added
+        if (req.path.startsWith('/mocks') || 
+            req.path === '/' || 
+            req.path === '/info' || 
+            req.path === '/update-target' ||
+            req.path === '/update-headers' ||
+            req.path === '/update-cache' ||
+            req.path === '/reset-stats' ||
+            req.path === '/clear-cache' ||
+            req.path.startsWith('/dashboard') ||
+            req.path.startsWith('/test-proxy')) {
+            return next();
+        }
+
+        // Check if we have a mock for this path
+        const matchingMock = mocks.find(mock => {
+            // Match exact path or with wildcard support
+            if (mock.enabled && (
+                mock.path === req.path || 
+                (mock.path.endsWith('*') && req.path.startsWith(mock.path.slice(0, -1)))
+            )) {
+                return true;
+            }
+            return false;
+        });
+
+        if (matchingMock) {
+            console.log(`Mocking response for: ${req.method} ${req.path}`);
+            
+            // Update request stats
+            requestStats.total++;
+            const method = req.method;
+            requestStats.methods[method] = (requestStats.methods[method] || 0) + 1;
+            
+            // Update status code stats
+            const statusCode = matchingMock.statusCode.toString();
+            requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
+            
+            // Log the mocked request
+            const logData = {
+                timestamp: new Date().toISOString(),
+                method: req.method,
+                url: req.url,
+                status: matchingMock.statusCode,
+                mocked: true
+            };
+            broadcastLog(logData);
+            
+            // Return the mock response
+            return res.status(matchingMock.statusCode).json(matchingMock.responseBody);
+        }
+        
+        // No mock found, continue to proxy
+        next();
+    });
 
     // Setup proxy middleware
     const options = {

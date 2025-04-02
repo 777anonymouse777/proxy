@@ -80,6 +80,16 @@
                 </div>
             </div>
 
+            <div class="card mocks-card">
+                <div class="card-header">
+                    <h2>API Mocks</h2>
+                    <button id="addMock" class="button button-secondary">Add Mock</button>
+                </div>
+                <div id="mocksContainer" class="mocks-container">
+                    <div class="mocks-placeholder">No mocks configured yet...</div>
+                </div>
+            </div>
+
             <div class="card log-card">
                 <div class="log-header">
                     <h2>Request Logs</h2>
@@ -113,6 +123,38 @@
                 <div class="modal-buttons">
                     <button id="cancelHeader" class="button button-secondary">Cancel</button>
                     <button id="saveHeader" class="button">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mocks Modal -->
+    <div id="mockModal" class="modal">
+        <div class="modal-content">
+            <h3 id="mockModalTitle">Add API Mock</h3>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="mockPath">Path:</label>
+                    <input type="text" id="mockPath" class="text-input" placeholder="/api/endpoint or /api/users/*">
+                </div>
+                <div class="form-group">
+                    <label for="mockStatus">Status Code:</label>
+                    <input type="number" id="mockStatus" class="text-input" placeholder="200" value="200">
+                </div>
+                <div class="form-group">
+                    <label for="mockResponse">Response Body (JSON):</label>
+                    <textarea id="mockResponse" class="text-area" placeholder='{"message": "Mocked response"}'></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="mockEnabled" checked>
+                        <span class="toggle-switch"></span>
+                        Enabled
+                    </label>
+                </div>
+                <div class="modal-buttons">
+                    <button id="cancelMock" class="button button-secondary">Cancel</button>
+                    <button id="saveMock" class="button">Add</button>
                 </div>
             </div>
         </div>
