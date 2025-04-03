@@ -20,7 +20,7 @@
       "message": "AAAA"
     },
     "statusCode": 203,
-    "enabled": true,
+    "enabled": false,
     "queryParams": [],
     "bodyMatch": null,
     "createdAt": "2025-04-02T10:05:12.368Z"

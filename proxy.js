@@ -13,6 +13,7 @@ const apicache = require('apicache');
 const cookie = require('cookie-parser');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios'); // For testing
+const InterceptQueue = require('./interceptQueue'); // Import InterceptQueue
 
 // Load environment variables from .env file
 dotenv.config();
@@ -21,6 +22,9 @@ dotenv.config();
 const app = express();
 const useHttps = process.env.USE_HTTPS === 'true';
 let server;
+
+// Create instance of InterceptQueue for request interception
+const interceptQueue = new InterceptQueue();
 
 // Create data directory if it doesn't exist
 const dataDir = path.join(__dirname, 'data');
@@ -483,19 +487,15 @@ app.delete('/mocks/:id', (req, res) => {
     });
 });
 
-// Add this route to your proxy.js file
+// Add this route to your proxy.js file - deprecated but kept for backward compatibility
 app.post('/mocks/deactivate-all', (req, res) => {
-    // Deactivate all mocks
-    mocks.forEach(mock => {
-        mock.enabled = false;
-    });
-    
-    // Save updated mocks to disk
-    saveMocksToDisk();
+    // This route is now deprecated and is a no-op to maintain API compatibility
+    // Mocks remain enabled even during intercept mode
+    console.log('mocks/deactivate-all endpoint called (deprecated, no-op)');
     
     res.json({ 
         success: true, 
-        message: 'All mocks deactivated'
+        message: 'Mocks remain enabled during intercept mode'
     });
 });
 
@@ -600,6 +600,102 @@ app.use((req, res, next) => {
     next();
 });
 
+// Add endpoint for updating intercept mode
+app.post('/update-intercept', (req, res) => {
+    const { enabled } = req.body;
+    
+    if (enabled === undefined) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Enabled flag must be provided'
+        });
+    }
+
+    try {
+        // Update intercept mode without affecting mocks
+        interceptQueue.setInterceptionEnabled(enabled);
+        
+        console.log(`Intercept mode ${enabled ? 'enabled' : 'disabled'}`);
+        
+        res.json({ 
+            success: true, 
+            message: `Intercept mode ${enabled ? 'enabled' : 'disabled'}`
+        });
+    } catch (error) {
+        console.error('Error updating intercept mode:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Add endpoint to get intercepted requests
+app.get('/intercepted-requests', (req, res) => {
+    try {
+        const requests = interceptQueue.getPendingRequests();
+        res.json({ 
+            success: true, 
+            requests 
+        });
+    } catch (error) {
+        console.error('Error getting intercepted requests:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Add endpoint to forward intercepted request
+app.post('/forward-request/:id', (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Get the modified request data if provided
+        const modifiedData = req.body;
+        
+        // Get the request from queue
+        const originalRequest = interceptQueue.getRequest(id);
+        
+        if (!originalRequest) {
+            return res.status(404).json({
+                success: false,
+                error: `Request with ID ${id} not found`
+            });
+        }
+        
+        // Apply any modifications if provided
+        if (modifiedData) {
+            if (modifiedData.url) originalRequest.url = modifiedData.url;
+            if (modifiedData.status) originalRequest.status = modifiedData.status;
+            if (modifiedData.headers) {
+                // Only update non-internal headers
+                Object.entries(modifiedData.headers).forEach(([key, value]) => {
+                    if (!key.startsWith('_')) {
+                        originalRequest.headers[key] = value;
+                    }
+                });
+            }
+            if (modifiedData.body) originalRequest.body = modifiedData.body;
+        }
+        
+        // Forward the request
+        interceptQueue.forwardRequest(id);
+        
+        res.json({ 
+            success: true, 
+            message: `Request ${id} forwarded` 
+        });
+    } catch (error) {
+        console.error('Error forwarding request:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Setup proxy middleware function
 function setupProxyMiddleware() {
     // Remove existing proxy middleware
@@ -620,6 +716,9 @@ function setupProxyMiddleware() {
             req.path === '/update-cache' ||
             req.path === '/reset-stats' ||
             req.path === '/clear-cache' ||
+            req.path === '/update-intercept' ||
+            req.path === '/intercepted-requests' ||
+            req.path.startsWith('/forward-request/') ||
             req.path.startsWith('/dashboard') ||
             req.path.startsWith('/test-proxy')) {
             return next();
@@ -629,6 +728,27 @@ function setupProxyMiddleware() {
         if (req.query._viewDetails === 'true' || req.headers['x-log-details-view'] === 'true') {
             console.log('Skipping log for details view:', req.method, req.url);
             return next();
+        }
+
+        // Check if intercept mode is enabled
+        if (interceptQueue.isInterceptionEnabled()) {
+            console.log(`Intercepting request: ${req.method} ${req.url}`);
+            
+            // Intercept the request and broadcast the interception
+            return interceptQueue.intercept(req, res, next, (interceptId) => {
+                // Prepare intercepted request data to send to clients
+                const interceptData = {
+                    interceptionId: interceptId,
+                    timestamp: new Date().toISOString(),
+                    method: req.method,
+                    url: req.url,
+                    headers: req.headers,
+                    body: req.body
+                };
+                
+                // Broadcast the intercepted request to WebSocket clients
+                broadcastLog(interceptData);
+            });
         }
 
         // Log the request regardless if it's mocked or actual
@@ -1078,7 +1198,7 @@ module.exports = { app, server };
 // 6. Add CSS styling in public/styles.css
 // 7. Start proxy: node proxy.js
 // 8. Access at http://localhost:3333
-//
+// 
 // Usage:
 // - Dashboard: http://localhost:3333
 // - Status endpoint: http://localhost:3333/info  
