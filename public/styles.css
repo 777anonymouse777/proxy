@@ -103,11 +103,27 @@ h1 {
 
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: 1fr 2fr;
+    grid-template-rows: auto auto;
     gap: 20px;
-    width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
+    margin-top: 20px;
+}
+
+.status-card {
+    grid-column: 1 / 2;
+    grid-row: 1;
+}
+
+.mocks-card {
+    grid-column: 2 / 3;
+    grid-row: 1;
+}
+
+.log-card {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
 }
 
 .card {
@@ -167,17 +183,6 @@ code {
     font-family: 'Fira Code', monospace;
     font-size: 0.9em;
     color: #ecf0f1;
-}
-
-.log-card {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
 }
 
 .log-header {
@@ -1354,17 +1359,10 @@ select:focus {
 }
 
 /* Mocks Card and Container */
-.mocks-card {
-    grid-column: 1 / -1;
-}
-
 .mocks-container {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-height: 300px;
+    padding: 10px;
     overflow-y: auto;
-    padding: 10px 0;
+    max-height: 350px;
 }
 
 .mock-item {

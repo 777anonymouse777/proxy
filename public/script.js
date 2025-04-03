@@ -1,42 +1,3 @@
-function setupEndpointHandlers() {
-    const endpoints = document.querySelectorAll('.endpoint-button');
-    
-    endpoints.forEach(endpoint => {
-        // Add context menu handler (right-click)
-        endpoint.addEventListener('contextmenu', (e) => {
-            e.preventDefault();  // Prevent default context menu
-            const text = endpoint.textContent;
-            navigator.clipboard.writeText(text)
-                .then(() => {
-                    // Show temporary feedback
-                    const originalText = endpoint.textContent;
-                    endpoint.textContent = 'Copied!';
-                    endpoint.classList.add('copied');
-                    
-                    setTimeout(() => {
-                        endpoint.textContent = originalText;
-                        endpoint.classList.remove('copied');
-                    }, 1000);
-                })
-                .catch(err => {
-                    console.error('Error copying to clipboard:', err);
-                });
-        });
-        
-        // Add click handler for opening the URL
-        endpoint.addEventListener('click', (e) => {
-            e.preventDefault();
-            const url = endpoint.textContent;
-            if (url.includes('*')) {
-                // If URL contains wildcard, open base URL instead
-                window.open(url.replace('/*', ''), '_blank');
-            } else {
-                window.open(url, '_blank');
-            }
-        });
-    });
-}
-
 // WebSocket connection handling
 let ws;
 let reconnectAttempts = 0;
@@ -378,7 +339,6 @@ function setupLogFilesModal() {
 // Initialize everything when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     // Setup UI components
-    setupEndpointHandlers();
     setupTargetUrlUpdate();
     setupClearLogs();
     setupSaveLogs();
@@ -388,9 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Connect to WebSocket for real-time logs
     connectWebSocket();
-    
-    // Update endpoint examples with correct hostname
-    updateEndpointExamples();
 });
 
 // Setup guide toggle functionality

@@ -88,8 +88,9 @@
             <h3>Quick Start Guide</h3>
             <ol>
                 <li>Set your <strong>Target URL</strong> to the API service you want to proxy</li>
-                <li>Send API requests to <code id="apiUrlExample">http://localhost:3333/api/your-endpoint</code></li>
+                <li>Send API requests to <code id="apiUrlExample">http://localhost:3333/your-endpoint</code></li>
                 <li>Requests will be forwarded to <code id="targetUrlExample">https://api.example.com/your-endpoint</code></li>
+                <li>Create <strong>API Mocks</strong> to simulate responses without hitting the actual API</li>
                 <li>View logs and statistics in real-time below</li>
             </ol>
             <button id="hideGuide" class="button button-secondary">Hide Guide</button>
@@ -113,24 +114,6 @@
                     <div class="config-item">
                         <label>Start Time:</label>
                         <span id="startTime">Loading...</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card endpoints-card">
-                <h2>Available Endpoints</h2>
-                <div class="endpoints-list">
-                    <div class="endpoint-item">
-                        <span class="endpoint-label">Dashboard:</span>
-                        <button id="dashboardUrl" class="endpoint-button">http://localhost:3333</button>
-                    </div>
-                    <div class="endpoint-item">
-                        <span class="endpoint-label">Status:</span>
-                        <button id="statusUrl" class="endpoint-button">http://localhost:3333/info</button>
-                    </div>
-                    <div class="endpoint-item">
-                        <span class="endpoint-label">API Proxy:</span>
-                        <button id="proxyUrl" class="endpoint-button">http://localhost:3333/api/*</button>
                     </div>
                 </div>
             </div>
