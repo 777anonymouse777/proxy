@@ -19,6 +19,10 @@ let breakpointEnabled = false;
 let interceptedRequests = [];
 const breakpoints = new Map(); // store breakpoint conditions
 
+// Add this at the top with other state variables
+let mockStates = new Map(); // Store the state of mocks before intercept mode
+let isInitialMockStateCapture = true; // Flag to track initial state capture
+
 // Fetch server info and update UI
 function fetchServerInfo() {
     fetch('/info')
@@ -345,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Connect to WebSocket for real-time logs
     connectWebSocket();
+    setupMockToggleHandlers();
 });
 
 // Setup guide toggle functionality
@@ -650,23 +655,34 @@ function setupMocksModal() {
     
     // Toggle mock enabled state
     function toggleMock(mockId, enabled) {
-        fetch(`/mocks/${mockId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ enabled })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Refresh mocks list
-                fetchMocks();
-            }
-        })
-        .catch(error => {
-            console.error('Error toggling mock:', error);
-        });
+        if (!interceptEnabled) {
+            fetch(`/mocks/${mockId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log(`Mock ${mockId} ${enabled ? 'enabled' : 'disabled'}`);
+                } else {
+                    console.error('Error toggling mock:', data.error);
+                    // Revert the toggle if the server update failed
+                    const toggle = document.querySelector(`.mock-toggle[data-id="${mockId}"]`);
+                    if (toggle) {
+                        toggle.checked = !enabled;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error toggling mock:', error);
+                // Revert the toggle on error
+                const toggle = document.querySelector(`.mock-toggle[data-id="${mockId}"]`);
+                if (toggle) {
+                    toggle.checked = !enabled;
+                }
+            });
+        }
     }
     
     // Delete mock
@@ -720,6 +736,22 @@ function setupMocksModal() {
             }
         });
     }
+    
+    // Update the mock toggle event handler
+    mocksContainer.addEventListener('change', (event) => {
+        if (event.target.classList.contains('mock-toggle')) {
+            const mockId = event.target.dataset.id;
+            const enabled = event.target.checked;
+            
+            if (interceptEnabled) {
+                // Just update the UI state without affecting other toggles
+                console.log(`Mock ${mockId} will be ${enabled ? 'enabled' : 'disabled'} when intercept mode is turned off`);
+            } else {
+                // Actually toggle the mock
+                toggleMock(mockId, enabled);
+            }
+        }
+    });
     
     // Initial fetch of mocks
     fetchMocks();
@@ -963,39 +995,53 @@ function toggleMocksUI(enabled) {
     
     if (!mocksCard) return;
     
-    // Remove any existing clickable overlay
-    const existingOverlay = document.getElementById('mocksClickBlocker');
-    if (existingOverlay) {
-        existingOverlay.remove();
-    }
-    
     if (enabled) {
-        // Enable mocks
+        // Enabling mocks (turning off intercept mode)
         mocksCard.classList.remove('disabled');
         
-        // Remove mocks disabled message if it exists
+        // Remove mocks disabled message
         const existingMessage = document.getElementById('mocksDisabledMessage');
         if (existingMessage) {
             existingMessage.remove();
         }
+
+        // Restore all mock states that were changed during intercept mode
+        mockStates.forEach((wasEnabled, mockId) => {
+            const toggle = document.querySelector(`.mock-toggle[data-id="${mockId}"]`);
+            if (toggle) {
+                fetch(`/mocks/${mockId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: toggle.checked })
+                }).catch(error => {
+                    console.error('Error restoring mock state:', error);
+                });
+            }
+        });
+        
+        // Clear stored states
+        mockStates.clear();
+        isInitialMockStateCapture = true;
+        
     } else {
-        // Disable mocks
+        // Disabling mocks (turning on intercept mode)
         mocksCard.classList.add('disabled');
         
-        // Create a transparent overlay to block all clicks
-        const overlay = document.createElement('div');
-        overlay.id = 'mocksClickBlocker';
-        overlay.className = 'mocks-click-blocker';
-        mocksCard.appendChild(overlay);
+        if (isInitialMockStateCapture) {
+            // Capture initial states of all mocks
+            document.querySelectorAll('.mock-toggle').forEach(toggle => {
+                mockStates.set(toggle.dataset.id, toggle.checked);
+            });
+            isInitialMockStateCapture = false;
+        }
         
-        // Add mocks disabled message if it doesn't exist
+        // Add mocks disabled message
         if (!document.getElementById('mocksDisabledMessage') && mocksContainer) {
             const disabledMessage = document.createElement('div');
             disabledMessage.id = 'mocksDisabledMessage';
             disabledMessage.className = 'mocks-disabled-message';
-            disabledMessage.textContent = 'Mocks are disabled in intercept mode';
+            disabledMessage.textContent = 'Mocks are disabled in intercept mode (UI changes will be applied when intercept mode is disabled)';
             
-            // Insert at the top of the mocks container
             if (mocksContainer.firstChild) {
                 mocksContainer.insertBefore(disabledMessage, mocksContainer.firstChild);
             } else {
@@ -1003,16 +1049,14 @@ function toggleMocksUI(enabled) {
             }
         }
         
-        // Deactivate all mocks when intercept mode is enabled
+        // Deactivate all mocks internally but maintain UI state
         fetch('/mocks/deactivate-all', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         })
         .then(response => response.json())
         .then(data => {
-            console.log('All mocks deactivated:', data);
-            // Refresh mocks display to show them all as disabled
-            fetchMocks();
+            console.log('All mocks deactivated internally:', data);
         })
         .catch(error => {
             console.error('Error deactivating mocks:', error);
@@ -1560,5 +1604,22 @@ function forwardInterceptedRequest(requestId) {
     })
     .catch(error => {
         console.error('Error forwarding request:', error);
+    });
+}
+
+function setupMockToggleHandlers() {
+    document.addEventListener('change', (event) => {
+        if (event.target.classList.contains('mock-toggle')) {
+            const mockId = event.target.dataset.id;
+            const enabled = event.target.checked;
+            
+            if (interceptEnabled) {
+                // Just update the UI state without affecting other toggles
+                console.log(`Mock ${mockId} will be ${enabled ? 'enabled' : 'disabled'} when intercept mode is turned off`);
+            } else {
+                // Actually toggle the mock
+                toggleMock(mockId, enabled);
+            }
+        }
     });
 }

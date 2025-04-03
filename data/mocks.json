@@ -7,7 +7,7 @@
       "message": "Hii"
     },
     "statusCode": 202,
-    "enabled": false,
+    "enabled": true,
     "queryParams": [],
     "bodyMatch": null,
     "createdAt": "2025-04-02T10:04:58.516Z"
@@ -20,7 +20,7 @@
       "message": "AAAA"
     },
     "statusCode": 203,
-    "enabled": false,
+    "enabled": true,
     "queryParams": [],
     "bodyMatch": null,
     "createdAt": "2025-04-02T10:05:12.368Z"
@@ -33,7 +33,7 @@
       "message": "Mocked response"
     },
     "statusCode": 500,
-    "enabled": false,
+    "enabled": true,
     "queryParams": [
       {
         "key": "latitude",
@@ -63,7 +63,7 @@
       "message": "Mocked response"
     },
     "statusCode": 210,
-    "enabled": false,
+    "enabled": true,
     "queryParams": [],
     "bodyMatch": {
       "type": "CARD",
