@@ -517,6 +517,73 @@ app.get('/', (req, res) => {
 const MAX_LOGS = 1000;
 let requestLogs = [];
 
+// Add a dedicated endpoint for fetching log details without logging 
+app.get('/log-details', (req, res) => {
+    const { url, method } = req.query;
+    
+    if (!url) {
+        return res.status(400).json({
+            success: false,
+            error: 'URL parameter is required'
+        });
+    }
+    
+    console.log(`[Details View] Fetching details for ${method || 'GET'} ${url} (not logged)`);
+    
+    // Normalize the URL path
+    let targetUrl = url;
+    if (!targetUrl.startsWith('/')) {
+        targetUrl = '/' + targetUrl;
+    }
+    
+    // Create the full target URL
+    const fullTargetUrl = `${API_SERVICE_URL}${targetUrl}`;
+    console.log(`[Details View] Proxying to: ${fullTargetUrl}`);
+    
+    // Make a direct request to the target API using axios
+    axios({
+        method: method || 'GET',
+        url: fullTargetUrl,
+        headers: {
+            ...CUSTOM_HEADERS,
+            'X-Detail-View': 'true'
+        },
+        validateStatus: () => true, // Accept any status code
+        timeout: 10000 // 10 second timeout
+    })
+    .then(response => {
+        console.log(`[Details View] Response received: ${response.status}`);
+        res.status(response.status).send(response.data);
+    })
+    .catch(error => {
+        console.error('[Details View] Error:', error.message);
+        
+        // Handle different error types
+        if (error.response) {
+            // The server responded with a status code outside of 2xx
+            res.status(error.response.status).send(error.response.data);
+        } else if (error.request) {
+            // The request was made but no response was received
+            res.status(502).json({
+                error: 'Bad Gateway',
+                message: 'No response received from target API'
+            });
+        } else {
+            // Something happened in setting up the request
+            res.status(500).json({
+                error: 'Internal Server Error',
+                message: error.message
+            });
+        }
+    });
+});
+
+// Add this at the top of your proxy.js file
+app.use((req, res, next) => {
+    console.log(`[DEBUG] Received request: ${req.method} ${req.url}`);
+    next();
+});
+
 // Setup proxy middleware function
 function setupProxyMiddleware() {
     // Remove existing proxy middleware
@@ -539,6 +606,12 @@ function setupProxyMiddleware() {
             req.path === '/clear-cache' ||
             req.path.startsWith('/dashboard') ||
             req.path.startsWith('/test-proxy')) {
+            return next();
+        }
+
+        // Skip logging for detail view requests
+        if (req.query._viewDetails === 'true' || req.headers['x-log-details-view'] === 'true') {
+            console.log('Skipping log for details view:', req.method, req.url);
             return next();
         }
 
@@ -614,9 +687,18 @@ function setupProxyMiddleware() {
             const statusCode = matchingMock.statusCode.toString();
             requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
             
-            // Update log data with status and mocked flag
+            // Pretty format the JSON response
+            let formattedResponse;
+            try {
+                formattedResponse = JSON.stringify(matchingMock.responseBody, null, 2);
+            } catch (e) {
+                formattedResponse = '[Error formatting response]';
+            }
+            
+            // Update log data with status, mocked flag, and formatted response body
             logData.status = matchingMock.statusCode;
             logData.mocked = true;
+            logData.responseBody = formattedResponse; // Include the formatted response body
             
             // Broadcast the log
             broadcastLog(logData);
@@ -675,17 +757,64 @@ function setupProxyMiddleware() {
         onProxyRes: (proxyRes, req, res) => {
             console.log('Response received:', proxyRes.statusCode, req.url);
             
-            // Update status code stats
-            const statusCode = proxyRes.statusCode.toString();
-            requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
+            // Create a buffer to collect response data
+            let responseBody = [];
             
-            const logData = {
-                timestamp: new Date().toISOString(),
-                method: req.method,
-                url: req.url,
-                status: proxyRes.statusCode
-            };
-            broadcastLog(logData);
+            // Listen for data chunks
+            proxyRes.on('data', (chunk) => {
+                responseBody.push(chunk);
+            });
+            
+            // When response is complete
+            proxyRes.on('end', () => {
+                // Update status code stats
+                const statusCode = proxyRes.statusCode.toString();
+                requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
+                
+                // Process the response body
+                let parsedBody = '';
+                try {
+                    // Combine chunks into a buffer and convert to string
+                    const bodyBuffer = Buffer.concat(responseBody);
+                    const bodyString = bodyBuffer.toString('utf8');
+                    
+                    // Try to parse as JSON if possible
+                    try {
+                        const contentType = proxyRes.headers['content-type'] || '';
+                        if (contentType.includes('application/json')) {
+                            // For JSON, parse then stringify with formatting
+                            const jsonObj = JSON.parse(bodyString);
+                            parsedBody = JSON.stringify(jsonObj, null, 2);
+                        } else {
+                            // For non-JSON, just use the string
+                            parsedBody = bodyString;
+                        }
+                    } catch (e) {
+                        // If JSON parsing fails, use the raw string
+                        parsedBody = bodyString;
+                    }
+                    
+                    // If the body is too large, truncate it
+                    if (parsedBody.length > 10000) {
+                        parsedBody = parsedBody.substring(0, 10000) + '... [truncated]';
+                    }
+                } catch (error) {
+                    console.error('Error processing response body:', error);
+                    parsedBody = '[Error processing response body]';
+                }
+                
+                // Create log data with response body included
+                const logData = {
+                    timestamp: new Date().toISOString(),
+                    method: req.method,
+                    url: req.url,
+                    status: proxyRes.statusCode,
+                    responseBody: parsedBody // Include the parsed response body
+                };
+                
+                // Broadcast the log with response body
+                broadcastLog(logData);
+            });
         },
         onError: (err, req, res) => {
             console.error('Proxy error:', err);
