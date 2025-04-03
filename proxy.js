@@ -483,6 +483,22 @@ app.delete('/mocks/:id', (req, res) => {
     });
 });
 
+// Add this route to your proxy.js file
+app.post('/mocks/deactivate-all', (req, res) => {
+    // Deactivate all mocks
+    mocks.forEach(mock => {
+        mock.enabled = false;
+    });
+    
+    // Save updated mocks to disk
+    saveMocksToDisk();
+    
+    res.json({ 
+        success: true, 
+        message: 'All mocks deactivated'
+    });
+});
+
 // Error handling middleware - Add this before the static file middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err);
