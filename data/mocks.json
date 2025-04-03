@@ -1,28 +1,77 @@
 [
   {
-    "id": "8a03a934-da36-4e1b-b97f-0d4d01832b03",
-    "path": "/configs/v1",
-    "method": "PUT",
-    "responseBody": {
-      "message": "Mocked response"
-    },
-    "statusCode": 200,
-    "enabled": true,
-    "queryParams": [],
-    "bodyMatch": null,
-    "createdAt": "2025-04-02T09:25:17.254Z"
-  },
-  {
-    "id": "b332b4d5-ac07-47ba-b8bb-5f81190037a0",
+    "id": "1aa93551-3e84-44f3-813e-8c2996089e2b",
     "path": "/configs/v1",
     "method": "GET",
     "responseBody": {
-      "message": "NONONO"
+      "message": "Hii"
     },
-    "statusCode": 200,
+    "statusCode": 202,
     "enabled": true,
     "queryParams": [],
     "bodyMatch": null,
-    "createdAt": "2025-04-02T09:31:05.815Z"
+    "createdAt": "2025-04-02T10:04:58.516Z"
+  },
+  {
+    "id": "6560fb5f-03ab-4f14-961d-310ebce552b1",
+    "path": "/configs/v1",
+    "method": "PUT",
+    "responseBody": {
+      "message": "AAAA"
+    },
+    "statusCode": 203,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-02T10:05:12.368Z"
+  },
+  {
+    "id": "4d2c2af3-c74f-420d-a67d-c16ecfa2e465",
+    "path": "/v1/serviceability",
+    "method": "GET",
+    "responseBody": {
+      "message": "Mocked response"
+    },
+    "statusCode": 500,
+    "enabled": true,
+    "queryParams": [
+      {
+        "key": "latitude",
+        "value": "7.1083877"
+      },
+      {
+        "key": "longitude",
+        "value": "125.5986719"
+      },
+      {
+        "key": "client_id",
+        "value": "nuw9DcyeIodlu3fVtMnxjmMqDfgBEfLZ"
+      },
+      {
+        "key": "angcars_beta",
+        "value": "1"
+      }
+    ],
+    "bodyMatch": null,
+    "createdAt": "2025-04-02T10:11:20.159Z"
+  },
+  {
+    "id": "b4923830-fc86-4b4a-9272-796ff2f6b870",
+    "path": "/v1/tracker/location",
+    "method": "POST",
+    "responseBody": {
+      "message": "Mocked response"
+    },
+    "statusCode": 210,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": {
+      "type": "CARD",
+      "default": true,
+      "card": {
+        "token": "FIkwyVIDPml4mF76BVQt6b8qPorQTtFtbZ4v78XVZhEWl0XTUJmtLcgPGHD5s42TwS0RUiyvj2GXsdlFyfmGSdsoOA1zvHWr8NV7EDGpPSoWYzYrwqafjLb7qaDyMzfmAJ4wzZRKJ3ObKKWynpTooDRO0QcHx5wKS8Y"
+      }
+    },
+    "createdAt": "2025-04-02T10:12:46.708Z"
   }
 ]

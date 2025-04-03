@@ -221,118 +221,23 @@ function setupClearLogs() {
     });
 }
 
-// Handle save logs button
-function setupSaveLogs() {
-    const saveLogsBtn = document.getElementById('saveLogs');
-    if (!saveLogsBtn) return;
+// Setup log search functionality
+function setupLogSearch() {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput) return;
     
-    saveLogsBtn.addEventListener('click', () => {
-        // Send request to save logs
-        fetch('/save-logs', {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert(`Logs saved successfully: ${data.filename}`);
-                // Update log files list if visible
-                fetchLogFiles();
-            } else {
-                alert(`Error saving logs: ${data.error}`);
-            }
-        })
-        .catch(error => {
-            console.error('Error saving logs:', error);
-            alert('Failed to save logs. Check console for details.');
-        });
-    });
-}
-
-// Fetch saved log files
-function fetchLogFiles() {
-    const logFilesContainer = document.getElementById('logFilesContainer');
-    if (!logFilesContainer) return;
-    
-    fetch('/log-files')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                updateLogFilesUI(data.logFiles);
-            } else {
-                console.error('Error fetching log files:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching log files:', error);
-        });
-}
-
-// Update log files UI
-function updateLogFilesUI(logFiles) {
-    const logFilesContainer = document.getElementById('logFilesContainer');
-    if (!logFilesContainer) return;
-    
-    if (logFiles.length === 0) {
-        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
-        return;
-    }
-    
-    let html = '';
-    logFiles.forEach(file => {
-        const date = new Date(file.createdAt).toLocaleString();
-        const sizeKB = (file.size / 1024).toFixed(1);
+    searchInput.addEventListener('input', () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const logEntries = document.querySelectorAll('.log-entry');
         
-        html += `
-            <div class="log-file-item">
-                <div class="log-file-info">
-                    <span class="log-file-name">${file.filename}</span>
-                    <span class="log-file-date">${date}</span>
-                    <span class="log-file-size">${sizeKB} KB</span>
-                </div>
-                <div class="log-file-actions">
-                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
-                </div>
-            </div>
-        `;
-    });
-    
-    logFilesContainer.innerHTML = html;
-    
-    // Add event listeners to download buttons
-    document.querySelectorAll('.download-log-file').forEach(button => {
-        button.addEventListener('click', () => {
-            const filename = button.getAttribute('data-filename');
-            if (filename) {
-                window.location.href = `/download-logs/${filename}`;
+        logEntries.forEach(entry => {
+            const logText = entry.textContent.toLowerCase();
+            if (logText.includes(searchTerm)) {
+                entry.style.display = '';
+            } else {
+                entry.style.display = 'none';
             }
         });
-    });
-}
-
-// Setup log files modal
-function setupLogFilesModal() {
-    const viewLogFilesBtn = document.getElementById('viewLogFiles');
-    const logFilesModal = document.getElementById('logFilesModal');
-    const closeLogFilesBtn = document.getElementById('closeLogFiles');
-    
-    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
-    
-    // Show modal when button is clicked
-    viewLogFilesBtn.addEventListener('click', () => {
-        logFilesModal.style.display = 'flex';
-        fetchLogFiles();
-    });
-    
-    // Hide modal when close button is clicked
-    closeLogFilesBtn.addEventListener('click', () => {
-        logFilesModal.style.display = 'none';
-    });
-    
-    // Close modal when clicking outside
-    window.addEventListener('click', (event) => {
-        if (event.target === logFilesModal) {
-            logFilesModal.style.display = 'none';
-        }
     });
 }
 
@@ -341,10 +246,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup UI components
     setupTargetUrlUpdate();
     setupClearLogs();
-    setupSaveLogs();
     setupMocksModal();
     setupGuideToggle();
-    setupLogFilesModal();
+    setupLogSearch();
     
     // Connect to WebSocket for real-time logs
     connectWebSocket();

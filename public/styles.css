@@ -204,6 +204,8 @@ code {
 }
 
 .log-actions {
+    display: flex;
+    gap: 10px;
     position: relative;
     width: 250px;
     max-width: 100%;
