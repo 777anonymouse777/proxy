@@ -1,0 +1,4329 @@
+function setupEndpointHandlers() {
+    const endpoints = document.querySelectorAll('.endpoint-button');
+    
+    endpoints.forEach(endpoint => {
+        // Add context menu handler (right-click)
+        endpoint.addEventListener('contextmenu', (e) => {
+            e.preventDefault();  // Prevent default context menu
+            const text = endpoint.textContent;
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    // Show temporary feedback
+                    const originalText = endpoint.textContent;
+                    endpoint.textContent = 'Copied!';
+                    endpoint.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        endpoint.textContent = originalText;
+                        endpoint.classList.remove('copied');
+                    }, 1000);
+                })
+                .catch(err => {
+                    console.error('Error copying to clipboard:', err);
+                });
+        });
+        
+        // Add click handler for opening the URL
+        endpoint.addEventListener('click', (e) => {
+            e.preventDefault();
+            const url = endpoint.textContent;
+            if (url.includes('*')) {
+                // If URL contains wildcard, open base URL instead
+                window.open(url.replace('/*', ''), '_blank');
+            } else {
+                window.open(url, '_blank');
+            }
+        });
+    });
+}
+
+// WebSocket connection handling
+let ws;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+const reconnectDelay = 2000; // 2 seconds
+
+// Fetch server info and update UI
+function fetchServerInfo() {
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            // Update target URL
+            const targetUrlInput = document.getElementById('targetUrl');
+            if (targetUrlInput) {
+                targetUrlInput.value = data.target;
+            }
+            
+            // Update port display
+            const portDisplay = document.getElementById('portDisplay');
+            if (portDisplay) {
+                portDisplay.textContent = data.port;
+            }
+            
+            // Update start time
+            const startTimeElement = document.getElementById('startTime');
+            if (startTimeElement) {
+                const startTime = new Date(data.proxyStartTime);
+                startTimeElement.textContent = startTime.toLocaleString();
+            }
+            
+            // Update target example
+            const targetExample = document.getElementById('targetUrlExample');
+            if (targetExample) {
+                targetExample.textContent = `${data.target}/your-endpoint`;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching server info:', error);
+        });
+}
+
+// Fetch saved logs and update UI
+function fetchSavedLogs() {
+    fetch('/logs')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.logs && data.logs.length > 0) {
+                console.log(`Loading ${data.logs.length} saved logs from server`);
+                
+                // Clear any placeholder and existing logs
+                const logContainer = document.getElementById('logContainer');
+                logContainer.innerHTML = '';
+                
+                // Update auto-save indicator with last save time if metadata is available
+                if (data.metadata && data.metadata.exportedAt) {
+                    updateAutoSaveIndicator(new Date(data.metadata.exportedAt));
+                }
+                
+                // Display logs in reverse order (newest first)
+                data.logs.forEach(logData => {
+                    // Format timestamp
+                    const timestamp = new Date(logData.timestamp);
+                    const timeString = timestamp.toLocaleTimeString();
+                    
+                    // Create log entry with proper formatting
+                    const logEntry = document.createElement('div');
+                    
+                    // Special handling for SYSTEM messages
+                    if (logData.method === 'SYSTEM') {
+                        logEntry.className = 'log-entry success';
+                        logEntry.innerHTML = `
+                            <span class="log-time">${timeString}</span>
+                            <span class="log-method">${logData.method}</span>
+                            <span class="log-url">${logData.url}</span>
+                            <span class="log-status">${logData.status || ''}</span>
+                        `;
+                    } else {
+                        // Regular request logs
+                        logEntry.className = `log-entry ${logData.status >= 400 ? 'error' : 'success'}`;
+                        
+                        const mockedText = logData.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
+                        
+                        logEntry.innerHTML = `
+                            <span class="log-time">${timeString}</span>
+                            <span class="log-method">${logData.method}</span>
+                            <span class="log-url">${logData.url}${mockedText}</span>
+                            <span class="log-status">${logData.status}</span>
+                        `;
+                    }
+                    
+                    // Add to log container (newest first)
+                    if (logContainer.firstChild) {
+                        logContainer.insertBefore(logEntry, logContainer.firstChild);
+                    } else {
+                        logContainer.appendChild(logEntry);
+                    }
+                });
+            } else {
+                console.log('No saved logs found or received from server');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching saved logs:', error);
+        });
+}
+
+// Update the auto-save indicator with the last save time
+function updateAutoSaveIndicator(timestamp) {
+    const indicator = document.getElementById('autoSaveIndicator');
+    if (indicator) {
+        const timeString = timestamp ? timestamp.toLocaleTimeString() : '';
+        if (timeString) {
+            indicator.setAttribute('title', `Logs are automatically saved every 5 minutes. Last saved: ${timeString}`);
+            indicator.textContent = `Auto-saved at ${timeString}`;
+        }
+    }
+}
+
+// Mock auto-save updates for the UI (the actual saving happens on the server)
+function setupAutoSaveUI() {
+    // Set up a client-side timer to update the UI to match the server's auto-save interval
+    const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes, same as server
+    
+    // Update the indicator every interval
+    setInterval(() => {
+        const now = new Date();
+        updateAutoSaveIndicator(now);
+        
+        // Show a brief "Saving..." message
+        const indicator = document.getElementById('autoSaveIndicator');
+        if (indicator) {
+            const originalText = indicator.textContent;
+            indicator.textContent = 'Auto-saving...';
+            
+            // After a delay, show "Saved" message
+            setTimeout(() => {
+                indicator.textContent = originalText;
+            }, 2000);
+        }
+    }, AUTO_SAVE_INTERVAL);
+}
+
+function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+        const statusBadge = document.getElementById('proxyStatus');
+        if (statusBadge) {
+            statusBadge.textContent = 'Connected';
+            statusBadge.classList.remove('inactive');
+            statusBadge.classList.add('active');
+        }
+        reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        
+        // Fetch server info when connection is established
+        fetchServerInfo();
+        
+        // Add a small delay before fetching logs to ensure connection is stable
+        setTimeout(() => {
+            // Fetch saved logs after connection is established
+            console.log('Fetching saved logs from server...');
+            fetchSavedLogs();
+        }, 500);
+        
+        // Manually log the WebSocket connected message to the UI
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer) {
+            // Format timestamp
+            const timestamp = new Date();
+            const timeString = timestamp.toLocaleTimeString();
+            
+            // Create log entry for WebSocket connected
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry success';
+            logEntry.innerHTML = `
+                <span class="log-time">${timeString}</span>
+                <span class="log-method">SYSTEM</span>
+                <span class="log-url">WebSocket connected</span>
+                <span class="log-status">200</span>
+            `;
+            
+            // Insert at the top of the container
+            if (logContainer.firstChild) {
+                logContainer.insertBefore(logEntry, logContainer.firstChild);
+            } else {
+                logContainer.appendChild(logEntry);
+            }
+            
+            // Remove placeholder if it exists
+            const placeholder = logContainer.querySelector('.log-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+        }
+    };
+    
+    ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        const statusBadge = document.getElementById('proxyStatus');
+        if (statusBadge) {
+            statusBadge.textContent = 'Disconnected';
+            statusBadge.classList.remove('active');
+            statusBadge.classList.add('inactive');
+        }
+        
+        // Try to reconnect if we haven't exceeded max attempts
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            console.log(`Reconnecting... Attempt ${reconnectAttempts}`);
+            setTimeout(connectWebSocket, reconnectDelay);
+        }
+    };
+    
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+    
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            // Add log entry to the log container
+            const logContainer = document.getElementById('logContainer');
+            if (logContainer) {
+                // Format timestamp
+                const timestamp = new Date(data.timestamp);
+                const timeString = timestamp.toLocaleTimeString();
+                
+                // Create log entry with proper formatting
+                const logEntry = document.createElement('div');
+                
+                // Special handling for SYSTEM messages
+                if (data.method === 'SYSTEM') {
+                    // Use success class for system messages to maintain green styling
+                    logEntry.className = 'log-entry success';
+                    logEntry.innerHTML = `
+                        <span class="log-time">${timeString}</span>
+                        <span class="log-method">${data.method}</span>
+                        <span class="log-url">${data.url}</span>
+                        <span class="log-status">${data.status || ''}</span>
+                    `;
+                } else {
+                    // Regular request logs with inline mocked indicator
+                    logEntry.className = `log-entry ${data.status >= 400 ? 'error' : 'success'}`;
+                    
+                    // Use unique class name to avoid style conflicts
+                    const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
+                    
+                    logEntry.innerHTML = `
+                        <span class="log-time">${timeString}</span>
+                        <span class="log-method">${data.method}</span>
+                        <span class="log-url">${data.url}${mockedText}</span>
+                        <span class="log-status">${data.status}</span>
+                    `;
+                }
+                
+                // Insert at the top of the container for newest first
+                if (logContainer.firstChild) {
+                    logContainer.insertBefore(logEntry, logContainer.firstChild);
+                } else {
+                    logContainer.appendChild(logEntry);
+                }
+                
+                // Remove placeholder if it exists
+                const placeholder = logContainer.querySelector('.log-placeholder');
+                if (placeholder) {
+                    placeholder.remove();
+                }
+            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+        }
+    };
+}
+
+// Setup target URL update functionality
+function setupTargetUrlUpdate() {
+    const saveTargetButton = document.getElementById('saveTarget');
+    const targetUrlInput = document.getElementById('targetUrl');
+    
+    if (saveTargetButton && targetUrlInput) {
+        saveTargetButton.addEventListener('click', () => {
+            const newTarget = targetUrlInput.value.trim();
+            if (!newTarget) {
+                alert('Please enter a valid target URL');
+                return;
+            }
+            
+            // Update target URL on the server
+            fetch('/update-target', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ target: newTarget })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Target URL updated successfully');
+                    // Refresh server info
+                    fetchServerInfo();
+                } else {
+                    alert(`Error updating target URL: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating target URL:', error);
+                alert('Failed to update target URL. Check console for details.');
+            });
+        });
+    }
+}
+
+// Handle clear logs button
+function setupClearLogs() {
+    const clearLogsBtn = document.getElementById('clearLogs');
+    if (!clearLogsBtn) return;
+    
+    clearLogsBtn.addEventListener('click', () => {
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer) {
+            // Clear all logs
+            logContainer.innerHTML = '<div class="log-placeholder">No logs yet...</div>';
+        }
+    });
+}
+
+// Handle save logs button
+function setupSaveLogs() {
+    const saveLogsBtn = document.getElementById('saveLogs');
+    if (!saveLogsBtn) return;
+    
+    saveLogsBtn.addEventListener('click', () => {
+        // Show spinner or disable button while saving
+        const originalText = saveLogsBtn.textContent;
+        saveLogsBtn.textContent = 'Saving...';
+        saveLogsBtn.disabled = true;
+        
+        // Send request to save logs
+        fetch('/save-logs', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            saveLogsBtn.disabled = false;
+            saveLogsBtn.textContent = originalText;
+            
+            if (data.success) {
+                // Show success message
+                saveLogsBtn.textContent = '✓ Saved!';
+                
+                // Ask user if they want to download the file immediately
+                if (confirm(`Logs saved successfully! Would you like to download the file now?`)) {
+                    window.location.href = data.downloadUrl;
+                }
+                
+                setTimeout(() => {
+                    saveLogsBtn.textContent = originalText;
+                }, 2000);
+                
+                // Update log files list if modal is visible
+                const logFilesModal = document.getElementById('logFilesModal');
+                if (logFilesModal && logFilesModal.style.display === 'flex') {
+                    fetchLogFiles();
+                }
+            } else {
+                // Show error message
+                saveLogsBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveLogsBtn.textContent = originalText;
+                }, 2000);
+                console.error(`Error saving logs: ${data.error}`);
+                alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+            }
+        })
+        .catch(error => {
+            saveLogsBtn.disabled = false;
+            saveLogsBtn.textContent = '❌ Error';
+            setTimeout(() => {
+                saveLogsBtn.textContent = originalText;
+            }, 2000);
+            console.error('Error saving logs:', error);
+            alert('Failed to save logs: ' + error.message);
+        });
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        } else {
+            // Add new mock
+            fetch('/mocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding mock:', error);
+                alert('Error adding mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        } else {
+            // Add new mock
+            fetch('/mocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding mock:', error);
+                alert('Error adding mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        } else {
+            // Add new mock
+            fetch('/mocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding mock:', error);
+                alert('Error adding mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        } else {
+            // Add new mock
+            fetch('/mocks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error adding mock:', error);
+                alert('Error adding mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+    setupAutoSaveUI();
+    
+    // Connect to WebSocket for real-time logs
+    connectWebSocket();
+    
+    // Update endpoint examples with correct hostname
+    updateEndpointExamples();
+    
+    // Set up confirmation before closing window
+    setupWindowCloseConfirmation();
+});
+
+// Add confirmation before closing window
+function setupWindowCloseConfirmation() {
+    window.addEventListener('beforeunload', (event) => {
+        // Only show confirmation if there are unsaved logs
+        const logContainer = document.getElementById('logContainer');
+        if (logContainer && logContainer.children.length > 0 && !logContainer.querySelector('.log-placeholder')) {
+            // Standard way to show a confirmation dialog when closing
+            event.preventDefault();
+            event.returnValue = 'You have unsaved logs. Are you sure you want to leave?';
+            return event.returnValue;
+        }
+    });
+}
+
+// Setup headers modal functionality
+function setupHeadersModal() {
+    const addHeaderButton = document.getElementById('addHeader');
+    const headerModal = document.getElementById('headerModal');
+    const saveHeaderButton = document.getElementById('saveHeader');
+    const cancelHeaderButton = document.getElementById('cancelHeader');
+    const headerNameInput = document.getElementById('headerName');
+    const headerValueInput = document.getElementById('headerValue');
+    const headersContainer = document.getElementById('headersContainer');
+    
+    // Current headers object
+    let customHeaders = {};
+    
+    // Show modal when Add Header button is clicked
+    if (addHeaderButton && headerModal) {
+        addHeaderButton.addEventListener('click', () => {
+            headerModal.classList.add('active');
+            // Reset inputs
+            if (headerNameInput) headerNameInput.value = '';
+            if (headerValueInput) headerValueInput.value = '';
+            // Focus on the first input
+            if (headerNameInput) headerNameInput.focus();
+        });
+    }
+    
+    // Handle Save Header button in modal
+    if (saveHeaderButton) {
+        saveHeaderButton.addEventListener('click', () => {
+            const name = headerNameInput.value.trim();
+            const value = headerValueInput.value.trim();
+            
+            if (name) {
+                // Add to headers object
+                customHeaders[name] = value;
+                
+                // Update UI
+                updateHeadersUI(customHeaders);
+                
+                // Close modal
+                headerModal.classList.remove('active');
+            } else {
+                alert('Please enter a header name');
+            }
+        });
+    }
+    
+    // Handle Cancel button in modal
+    if (cancelHeaderButton) {
+        cancelHeaderButton.addEventListener('click', () => {
+            headerModal.classList.remove('active');
+        });
+    }
+    
+    // Setup save headers button
+    const saveHeadersButton = document.getElementById('saveHeaders');
+    if (saveHeadersButton) {
+        saveHeadersButton.addEventListener('click', () => {
+            // Send headers to server
+            fetch('/update-headers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headers: customHeaders })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Headers updated successfully');
+                } else {
+                    alert(`Error updating headers: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating headers:', error);
+                alert('Failed to update headers. Check console for details.');
+            });
+        });
+    }
+    
+    // Function to update headers UI
+    function updateHeadersUI(headers) {
+        if (!headersContainer) return;
+        
+        // Clear container
+        headersContainer.innerHTML = '';
+        
+        // Check if there are any headers
+        const hasHeaders = Object.keys(headers).length > 0;
+        
+        if (!hasHeaders) {
+            // Show placeholder if no headers
+            headersContainer.innerHTML = '<div class="headers-placeholder">No custom headers yet...</div>';
+            return;
+        }
+        
+        // Add header items
+        for (const [name, value] of Object.entries(headers)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `
+                <span class="header-name">${name}:</span>
+                <span class="header-value">${value}</span>
+                <button class="delete-header" data-name="${name}">×</button>
+            `;
+            headersContainer.appendChild(headerItem);
+        }
+        
+        // Add event listeners to delete buttons
+        const deleteButtons = headersContainer.querySelectorAll('.delete-header');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const headerName = button.getAttribute('data-name');
+                if (headerName && headerName in customHeaders) {
+                    delete customHeaders[headerName];
+                    updateHeadersUI(customHeaders);
+                }
+            });
+        });
+    }
+    
+    // Fetch existing headers from server
+    fetch('/info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.customHeaders) {
+                customHeaders = data.customHeaders;
+                updateHeadersUI(customHeaders);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching headers:', error);
+        });
+}
+
+// Setup guide toggle functionality
+function setupGuideToggle() {
+    const hideGuideButton = document.getElementById('hideGuide');
+    const showGuideButton = document.getElementById('showGuide');
+    const usageGuide = document.querySelector('.usage-guide');
+    
+    if (hideGuideButton && usageGuide && showGuideButton) {
+        hideGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'none';
+            showGuideButton.style.display = 'block';
+        });
+        
+        showGuideButton.addEventListener('click', () => {
+            usageGuide.style.display = 'block';
+            showGuideButton.style.display = 'none';
+        });
+    }
+}
+
+function setupMocksModal() {
+    const addMockBtn = document.getElementById('addMock');
+    const mockModal = document.getElementById('mockModal');
+    const cancelMockBtn = document.getElementById('cancelMock');
+    const saveMockBtn = document.getElementById('saveMock');
+    const mockPath = document.getElementById('mockPath');
+    const mockStatus = document.getElementById('mockStatus');
+    const mockResponse = document.getElementById('mockResponse');
+    const mockEnabled = document.getElementById('mockEnabled');
+    const mockModalTitle = document.getElementById('mockModalTitle');
+    
+    if (!addMockBtn || !mockModal || !saveMockBtn || !cancelMockBtn) return;
+    
+    // Ensure the modal is hidden on page load or refresh
+    mockModal.style.display = 'none';
+
+    // Current mock being edited (if any)
+    let currentEditMockId = null;
+    
+    // Show modal when Add Mock button is clicked
+    addMockBtn.addEventListener('click', () => {
+        // Reset form
+        mockPath.value = '';
+        mockStatus.value = '200';
+        mockResponse.value = JSON.stringify({ message: 'Mocked response' }, null, 2);
+        mockEnabled.checked = true;
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Reset query params container
+        const queryParamsContainer = document.getElementById('queryParamsContainer');
+        if (queryParamsContainer) {
+            queryParamsContainer.innerHTML = '';
+        }
+        
+        // Reset body match input
+        const bodyMatchInput = document.getElementById('bodyMatchInput');
+        if (bodyMatchInput) {
+            bodyMatchInput.value = '';
+        }
+        
+        currentEditMockId = null;
+        mockModalTitle.textContent = 'Add API Mock';
+        saveMockBtn.textContent = 'Add';
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+    
+    // Hide modal when Cancel button is clicked
+    cancelMockBtn.addEventListener('click', () => {
+        mockModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === mockModal) {
+            mockModal.style.display = 'none';
+        }
+    });
+    
+    // Method selection buttons
+    document.querySelectorAll('.method-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            document.querySelectorAll('.method-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to clicked button
+            button.classList.add('active');
+            
+            // Show/hide body match container based on method
+            const method = button.getAttribute('data-method');
+            const bodyMatchSection = document.querySelector('.body-match-section');
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+                bodyMatchSection.style.display = 'block';
+            } else {
+                bodyMatchSection.style.display = 'none';
+            }
+        });
+    });
+    
+    // Add query parameter
+    document.getElementById('addQueryParam').addEventListener('click', () => {
+        const container = document.getElementById('queryParamsContainer');
+        const paramId = Date.now();
+        const paramRow = document.createElement('div');
+        paramRow.className = 'param-row';
+        paramRow.innerHTML = `
+            <input type="text" class="param-key" placeholder="Parameter name">
+            <input type="text" class="param-value" placeholder="Parameter value">
+            <button class="remove-param" data-id="${paramId}">×</button>
+        `;
+        container.appendChild(paramRow);
+    });
+    
+    // Remove query parameter (using event delegation)
+    document.getElementById('queryParamsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-param')) {
+            e.target.closest('.param-row').remove();
+        }
+    });
+    
+    // Save mock when Save button is clicked
+    saveMockBtn.addEventListener('click', () => {
+        // Validate form
+        if (!mockPath.value) {
+            alert('Path is required');
+            return;
+        }
+        
+        let responseBody;
+        try {
+            responseBody = JSON.parse(mockResponse.value || '{}');
+        } catch (error) {
+            alert('Invalid JSON for response body');
+            return;
+        }
+        
+        // Get selected method
+        const selectedMethod = document.querySelector('.method-button.active').getAttribute('data-method');
+        
+        // Collect query parameters
+        const queryParams = [];
+        document.querySelectorAll('.param-row').forEach(row => {
+            const key = row.querySelector('.param-key').value.trim();
+            const value = row.querySelector('.param-value').value.trim();
+            if (key) {
+                queryParams.push({ key, value });
+            }
+        });
+        
+        // Collect body match conditions
+        let bodyMatch = null;
+        if (selectedMethod === 'POST' || selectedMethod === 'PUT' || selectedMethod === 'PATCH') {
+            try {
+                const bodyMatchText = document.getElementById('bodyMatchInput').value.trim();
+                if (bodyMatchText) {
+                    bodyMatch = JSON.parse(bodyMatchText);
+                }
+            } catch (error) {
+                alert('Invalid JSON for body match conditions');
+                return;
+            }
+        }
+        
+        const mockData = {
+            path: mockPath.value,
+            method: selectedMethod,
+            statusCode: parseInt(mockStatus.value || 200, 10),
+            responseBody,
+            enabled: mockEnabled.checked,
+            queryParams,
+            bodyMatch
+        };
+        
+        if (currentEditMockId) {
+            // Update existing mock
+            fetch(`/mocks/${currentEditMockId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(mockData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide modal
+                    mockModal.style.display = 'none';
+                    
+                    // Refresh mocks list
+                    fetchMocks();
+                }
+            })
+            .catch(error => {
+                console.error('Error updating mock:', error);
+                alert('Error updating mock');
+            });
+        }
+    });
+}
+
+// Fetch saved log files
+function fetchLogFiles() {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    fetch('/log-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateLogFilesUI(data.logFiles);
+            } else {
+                console.error('Error fetching log files:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching log files:', error);
+        });
+}
+
+// Update log files UI
+function updateLogFilesUI(logFiles) {
+    const logFilesContainer = document.getElementById('logFilesContainer');
+    if (!logFilesContainer) return;
+    
+    if (logFiles.length === 0) {
+        logFilesContainer.innerHTML = '<div class="log-files-placeholder">No saved log files yet...</div>';
+        return;
+    }
+    
+    let html = '';
+    logFiles.forEach(file => {
+        const date = new Date(file.createdAt).toLocaleString();
+        const sizeKB = (file.size / 1024).toFixed(1);
+        
+        html += `
+            <div class="log-file-item">
+                <div class="log-file-info">
+                    <span class="log-file-name">${file.filename}</span>
+                    <span class="log-file-date">${date}</span>
+                    <span class="log-file-size">${sizeKB} KB</span>
+                </div>
+                <div class="log-file-actions">
+                    <button class="download-log-file" data-filename="${file.filename}">Download</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    logFilesContainer.innerHTML = html;
+    
+    // Add event listeners to download buttons
+    document.querySelectorAll('.download-log-file').forEach(button => {
+        button.addEventListener('click', () => {
+            const filename = button.getAttribute('data-filename');
+            if (filename) {
+                window.location.href = `/download-logs/${filename}`;
+            }
+        });
+    });
+}
+
+// Setup log files modal
+function setupLogFilesModal() {
+    const viewLogFilesBtn = document.getElementById('viewLogFiles');
+    const logFilesModal = document.getElementById('logFilesModal');
+    const closeLogFilesBtn = document.getElementById('closeLogFiles');
+    const saveNewLogFileBtn = document.getElementById('saveNewLogFile');
+    
+    if (!viewLogFilesBtn || !logFilesModal || !closeLogFilesBtn) return;
+    
+    // Show modal when button is clicked
+    viewLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'flex';
+        fetchLogFiles();
+    });
+    
+    // Hide modal when close button is clicked
+    closeLogFilesBtn.addEventListener('click', () => {
+        logFilesModal.style.display = 'none';
+    });
+    
+    // Save current logs from within the modal
+    if (saveNewLogFileBtn) {
+        saveNewLogFileBtn.addEventListener('click', () => {
+            // Show spinner on button while saving
+            const originalText = saveNewLogFileBtn.textContent;
+            saveNewLogFileBtn.textContent = 'Saving...';
+            saveNewLogFileBtn.disabled = true;
+            
+            // Save logs
+            fetch('/save-logs', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                saveNewLogFileBtn.disabled = false;
+                
+                if (data.success) {
+                    // Show success message
+                    saveNewLogFileBtn.textContent = '✓ Saved!';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    // Refresh the list of log files
+                    fetchLogFiles();
+                    
+                    // Ask if user wants to download right away
+                    if (confirm(`Logs saved as ${data.filename}. Would you like to download it now?`)) {
+                        window.location.href = data.downloadUrl;
+                    }
+                } else {
+                    // Show error
+                    saveNewLogFileBtn.textContent = '❌ Error';
+                    setTimeout(() => {
+                        saveNewLogFileBtn.textContent = originalText;
+                    }, 2000);
+                    
+                    alert(`Error saving logs: ${data.error || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                saveNewLogFileBtn.disabled = false;
+                saveNewLogFileBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    saveNewLogFileBtn.textContent = originalText;
+                }, 2000);
+                
+                alert('Failed to save logs: ' + error.message);
+            });
+        });
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logFilesModal) {
+            logFilesModal.style.display = 'none';
+        }
+    });
+}
+
+// Initialize everything when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup UI components
+    setupEndpointHandlers();
+    setupTargetUrlUpdate();
+    setupClearLogs();
+    setupSaveLogs();
+    setupHeadersModal();
+    setupMocksModal();
+    setupGuideToggle();
+    setupLogFilesModal();
+   

@@ -79,12 +79,12 @@
         <header>
             <h1>Proxy Server Dashboard</h1>
             <div class="header-actions">
-                <button id="showGuide" class="button button-secondary" style="display: none; margin-right: 10px;">Show Guide</button>
+                <button id="showGuide" class="button button-secondary" style="margin-right: 10px;">Show Guide</button>
                 <div class="status-badge" id="proxyStatus">Checking...</div>
             </div>
         </header>
 
-        <div class="usage-guide">
+        <div class="usage-guide" style="display: none;">
             <h3>Quick Start Guide</h3>
             <ol>
                 <li>Set your <strong>Target URL</strong> to the API service you want to proxy</li>
@@ -135,19 +135,6 @@
                 </div>
             </div>
 
-            <div class="card headers-card">
-                <div class="card-header">
-                    <h2>Custom Headers</h2>
-                    <button id="addHeader" class="button button-secondary">Add Header</button>
-                </div>
-                <div id="headersContainer" class="headers-container">
-                    <div class="headers-placeholder">No custom headers yet...</div>
-                </div>
-                <div class="card-footer">
-                    <button id="saveHeaders" class="button">Save Headers</button>
-                </div>
-            </div>
-
             <div class="card mocks-card">
                 <div class="card-header">
                     <h2>API Mocks</h2>
@@ -172,27 +159,6 @@
                 </div>
                 <div class="log-container" id="logContainer">
                     <div class="log-placeholder">No logs yet...</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Headers Modal -->
-    <div id="headerModal" class="modal">
-        <div class="modal-content">
-            <h3>Add Custom Header</h3>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="headerName">Header Name:</label>
-                    <input type="text" id="headerName" class="text-input" placeholder="X-Custom-Header">
-                </div>
-                <div class="form-group">
-                    <label for="headerValue">Header Value:</label>
-                    <input type="text" id="headerValue" class="text-input" placeholder="header-value">
-                </div>
-                <div class="modal-buttons">
-                    <button id="cancelHeader" class="button button-secondary">Cancel</button>
-                    <button id="saveHeader" class="button">Add</button>
                 </div>
             </div>
         </div>
