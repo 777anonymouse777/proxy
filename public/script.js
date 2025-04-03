@@ -149,6 +149,16 @@ function connectWebSocket() {
                     `;
                 }
                 
+                // Store full log data as a data attribute for use when clicked
+                logEntry.dataset.logData = JSON.stringify(data);
+                
+                // Add click event listener to show details
+                logEntry.addEventListener('click', function() {
+                    // Parse the stored log data
+                    const logData = JSON.parse(this.dataset.logData);
+                    showLogDetails(logData);
+                });
+                
                 // Insert at the top of the container for newest first
                 if (logContainer.firstChild) {
                     logContainer.insertBefore(logEntry, logContainer.firstChild);
@@ -241,6 +251,101 @@ function setupLogSearch() {
     });
 }
 
+// Setup log details modal functionality
+function setupLogDetailsModal() {
+    const logDetailsModal = document.getElementById('logDetailsModal');
+    const closeLogDetailsBtn = document.getElementById('closeLogDetails');
+    
+    if (!logDetailsModal || !closeLogDetailsBtn) return;
+    
+    // Hide modal when close button is clicked
+    closeLogDetailsBtn.addEventListener('click', () => {
+        logDetailsModal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (event) => {
+        if (event.target === logDetailsModal) {
+            logDetailsModal.style.display = 'none';
+        }
+    });
+}
+
+// Show log details in modal
+function showLogDetails(logData) {
+    const logDetailsModal = document.getElementById('logDetailsModal');
+    const detailTime = document.getElementById('logDetailTime');
+    const detailMethod = document.getElementById('logDetailMethod');
+    const detailUrl = document.getElementById('logDetailUrl');
+    const detailStatus = document.getElementById('logDetailStatus');
+    const detailBody = document.getElementById('logDetailBody');
+    
+    if (!logDetailsModal) return;
+    
+    // Clear previous data
+    detailBody.textContent = 'Loading response body...';
+    
+    // Fill in the log details
+    if (detailTime) detailTime.textContent = new Date(logData.timestamp).toLocaleString();
+    if (detailMethod) detailMethod.textContent = logData.method;
+    if (detailUrl) detailUrl.textContent = logData.url;
+    if (detailStatus) detailStatus.textContent = logData.status;
+    
+    // Show the modal
+    logDetailsModal.style.display = 'flex';
+    
+    // Fetch the response body if valid request
+    if (logData.url && logData.method !== 'SYSTEM') {
+        fetchResponseBody(logData.url, logData.method)
+            .then(response => {
+                if (detailBody) {
+                    try {
+                        // Pretty print JSON if possible
+                        detailBody.textContent = JSON.stringify(response, null, 2);
+                    } catch (error) {
+                        // Fallback for non-JSON responses
+                        detailBody.textContent = typeof response === 'string' ? response : JSON.stringify(response);
+                    }
+                }
+            })
+            .catch(error => {
+                if (detailBody) {
+                    detailBody.textContent = `Error fetching response: ${error.message}`;
+                }
+            });
+    } else {
+        // No response body for system messages
+        if (detailBody) {
+            detailBody.textContent = logData.method === 'SYSTEM' ? 'No response body for system messages' : 'No response body available';
+        }
+    }
+}
+
+// Fetch response body from the proxy server
+async function fetchResponseBody(url, method) {
+    try {
+        // Base URL for our proxy
+        const baseUrl = window.location.origin;
+        
+        // Create full URL by combining the base URL with the requested path
+        const fullUrl = new URL(url, baseUrl);
+        
+        // For simplicity, using GET to fetch the same URL through the proxy
+        // In a real implementation, you might need to recreate the original request
+        const response = await fetch(fullUrl.toString());
+        
+        // Try to parse as JSON, but fall back to text if that fails
+        try {
+            return await response.json();
+        } catch (e) {
+            return await response.text();
+        }
+    } catch (error) {
+        console.error('Error fetching response body:', error);
+        throw error;
+    }
+}
+
 // Initialize everything when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     // Setup UI components
@@ -249,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMocksModal();
     setupGuideToggle();
     setupLogSearch();
+    setupLogDetailsModal();
     
     // Connect to WebSocket for real-time logs
     connectWebSocket();

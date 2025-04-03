@@ -267,6 +267,12 @@ code {
     font-family: 'Courier New', monospace;
     font-size: 15px;
     line-height: 1.5;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.log-entry:hover {
+    background-color: rgba(52, 73, 94, 0.2);
 }
 
 .log-entry:last-child {
@@ -1538,4 +1544,40 @@ select:focus {
 .log-mocked-inline {
     background-color: #3498db !important;
     color: white !important;
+}
+
+/* Log Detail Modal Styles */
+.log-details {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.log-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.log-detail-label {
+    font-size: 0.9em;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.log-detail-value {
+    font-family: 'Courier New', monospace;
+    word-break: break-all;
+}
+
+.log-detail-body {
+    background-color: #1a1a1a;
+    padding: 15px;
+    border-radius: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
 }
