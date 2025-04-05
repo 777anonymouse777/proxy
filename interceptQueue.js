@@ -3,6 +3,7 @@
  * Manages the interception, queueing, and forwarding of HTTP requests.
  */
 const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 
 class InterceptQueue {
     constructor() {
@@ -58,7 +59,8 @@ class InterceptQueue {
             body: req.body,
             query: req.query,
             params: req.params,
-            // Store the response and next function so we can continue later
+            // Store the original request and response objects
+            _request: req,
             _response: res,
             _next: next,
             _intercepted: true
@@ -116,16 +118,67 @@ class InterceptQueue {
             throw new Error(`Request with ID ${id} is not intercepted`);
         }
         
-        // Continue the request processing
-        const next = request._next;
+        // Get the original Express request, response objects
+        const res = request._response;
+        const req = request._request;
         
-        // Remove the request from the queue
-        this.pendingRequests.delete(id);
+        console.log(`Forwarding intercepted request ${id}: ${request.method} ${request.url}`);
         
-        // Continue the request processing
-        if (typeof next === 'function') {
-            next();
-        }
+        // Build the target URL from the original request
+        const targetUrl = `${process.env.API_SERVICE_URL}${request.url}`;
+        
+        // Prepare headers (remove host header to avoid conflicts)
+        const headers = { ...request.headers };
+        delete headers.host;
+        
+        // Make the actual HTTP request to the target using axios
+        axios({
+            method: request.method,
+            url: targetUrl,
+            headers: headers,
+            data: request.body,
+            timeout: 30000, // 30 second timeout
+            validateStatus: () => true // Accept all status codes
+        })
+        .then(response => {
+            console.log(`Received response for forwarded request ${id}: ${response.status}`);
+            
+            // Send the response headers
+            Object.entries(response.headers).forEach(([key, value]) => {
+                // Skip setting certain headers that might cause conflicts
+                if (!['content-length', 'connection', 'keep-alive', 'transfer-encoding'].includes(key.toLowerCase())) {
+                    res.set(key, value);
+                }
+            });
+            
+            // Send the status code and response body
+            res.status(response.status).send(response.data);
+        })
+        .catch(error => {
+            console.error(`Error forwarding request ${id}:`, error.message);
+            
+            // Handle the error appropriately
+            if (error.response) {
+                // The request was made and the server responded with a non-2xx status
+                res.status(error.response.status).send(error.response.data);
+            } else if (error.request) {
+                // The request was made but no response was received
+                res.status(502).json({
+                    error: 'Bad Gateway',
+                    message: 'No response received from target server'
+                });
+            } else {
+                // Something happened in setting up the request
+                res.status(500).json({
+                    error: 'Internal Server Error',
+                    message: error.message
+                });
+            }
+        })
+        .finally(() => {
+            // Remove the request from the queue
+            this.pendingRequests.delete(id);
+        });
     }
 
     /**

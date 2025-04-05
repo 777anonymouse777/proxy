@@ -942,42 +942,54 @@ function setupInterceptControls() {
 // Only update the UI visual state without turning off mocks
 function updateMocksUIVisualState(interceptEnabled) {
     const mocksCard = document.querySelector('.mocks-card');
-    const addMockBtn = document.getElementById('addMock');
-    const mocksContainer = document.getElementById('mocksContainer');
-    
-    if (!mocksCard) return;
     
     if (interceptEnabled) {
-        // Visual indication that mocks management is limited during intercept mode
-        mocksCard.classList.add('intercept-active');
+        // Intercept mode is on, show mocks as disabled
+        mocksCard.classList.add('disabled');
         
-        // Add info message
-        if (!document.getElementById('mocksInterceptMessage') && mocksContainer) {
-            const infoMessage = document.createElement('div');
-            infoMessage.id = 'mocksInterceptMessage';
-            infoMessage.className = 'mocks-info-message';
-            infoMessage.textContent = 'Intercept mode is active. New requests will be intercepted, but mocks are still enabled.';
-            
-            if (mocksContainer.firstChild) {
-                mocksContainer.insertBefore(infoMessage, mocksContainer.firstChild);
-            } else {
-                mocksContainer.appendChild(infoMessage);
-            }
+        // Add or update the disabled message
+        let disabledMsg = document.querySelector('.mocks-disabled-message');
+        if (!disabledMsg) {
+            disabledMsg = document.createElement('div');
+            disabledMsg.className = 'mocks-disabled-message';
+            disabledMsg.innerHTML = '<p>Mocks are disabled while intercept mode is active</p>';
+            mocksCard.appendChild(disabledMsg);
+        }
+        
+        // Disable the "Add Mock" button
+        const addMockButton = document.getElementById('addMock');
+        if (addMockButton) {
+            addMockButton.disabled = true;
+        }
+        
+        // Add a semi-transparent overlay to block interaction
+        let clickBlocker = document.querySelector('.mocks-click-blocker');
+        if (!clickBlocker) {
+            clickBlocker = document.createElement('div');
+            clickBlocker.className = 'mocks-click-blocker';
+            mocksCard.appendChild(clickBlocker);
         }
     } else {
-        // Remove intercept active visual state
-        mocksCard.classList.remove('intercept-active');
+        // Intercept mode is off, show mocks as enabled
+        mocksCard.classList.remove('disabled');
         
-        // Remove info message
-        const existingMessage = document.getElementById('mocksInterceptMessage');
-        if (existingMessage) {
-            existingMessage.remove();
+        // Remove the disabled message if it exists
+        const disabledMsg = document.querySelector('.mocks-disabled-message');
+        if (disabledMsg) {
+            disabledMsg.remove();
         }
-    }
-    
-    // Add mock button is always enabled
-    if (addMockBtn) {
-        addMockBtn.disabled = false;
+        
+        // Enable the "Add Mock" button
+        const addMockButton = document.getElementById('addMock');
+        if (addMockButton) {
+            addMockButton.disabled = false;
+        }
+        
+        // Remove the click blocker if it exists
+        const clickBlocker = document.querySelector('.mocks-click-blocker');
+        if (clickBlocker) {
+            clickBlocker.remove();
+        }
     }
 }
 

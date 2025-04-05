@@ -619,7 +619,8 @@ app.post('/update-intercept', (req, res) => {
         
         res.json({ 
             success: true, 
-            message: `Intercept mode ${enabled ? 'enabled' : 'disabled'}`
+            message: `Intercept mode ${enabled ? 'enabled (mocks disabled)' : 'disabled (mocks enabled)'}`,
+            mocksActive: !enabled  // Add flag to indicate mocks status
         });
     } catch (error) {
         console.error('Error updating intercept mode:', error);
@@ -766,6 +767,7 @@ function setupProxyMiddleware() {
         };
 
         // Check if we have a mock for this path and method
+        // Only check for mocks if intercept mode is disabled
         const matchingMock = mocks.find(mock => {
             // Skip disabled mocks
             if (!mock.enabled) return false;
