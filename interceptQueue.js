@@ -23,7 +23,18 @@ class InterceptQueue {
      * @param {boolean} enabled Whether interception should be enabled
      */
     setInterceptionEnabled(enabled) {
+        const wasEnabled = this.interceptEnabled;
         this.interceptEnabled = !!enabled;
+        
+        // If intercept mode is being disabled and there were pending requests,
+        // automatically forward all of them
+        if (wasEnabled && !this.interceptEnabled) {
+            const pendingCount = this.pendingRequests.size;
+            if (pendingCount > 0) {
+                console.log(`Auto-forwarding ${pendingCount} pending requests after disabling intercept mode`);
+                this.forwardAllRequests();
+            }
+        }
     }
 
     /**
