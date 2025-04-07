@@ -19,7 +19,7 @@ let interceptedRequests = [];
 let mockStates = new Map(); // Store the state of mocks before intercept mode
 let isInitialMockStateCapture = true; // Flag to track initial state capture
 
-// Fetch server info and update UI
+// Fetch server info and update UI 
 function fetchServerInfo() {
     fetch('/info')
         .then(response => response.json())
@@ -298,6 +298,7 @@ function setupLogDetailsModal() {
         }
     });
 }
+
 
 // Show log details in modal
 function showLogDetails(logData) {

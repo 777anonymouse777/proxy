@@ -13,19 +13,6 @@
     "createdAt": "2025-04-02T10:04:58.516Z"
   },
   {
-    "id": "6560fb5f-03ab-4f14-961d-310ebce552b1",
-    "path": "/configs/v1",
-    "method": "PUT",
-    "responseBody": {
-      "message": "AAAA"
-    },
-    "statusCode": 203,
-    "enabled": false,
-    "queryParams": [],
-    "bodyMatch": null,
-    "createdAt": "2025-04-02T10:05:12.368Z"
-  },
-  {
     "id": "4d2c2af3-c74f-420d-a67d-c16ecfa2e465",
     "path": "/v1/serviceability",
     "method": "GET",
@@ -73,5 +60,18 @@
       }
     },
     "createdAt": "2025-04-02T10:12:46.708Z"
+  },
+  {
+    "id": "fbab72e2-e278-4b29-a203-08b81ded2714",
+    "path": "/configs/v1",
+    "method": "PUT",
+    "responseBody": {
+      "message": "Mocked response mogmog"
+    },
+    "statusCode": 203,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-06T13:01:06.433Z"
   }
 ]
