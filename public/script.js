@@ -1110,108 +1110,115 @@ function updateInterceptedRequestsUI() {
 }
 
 function showInterceptedRequestModal(id) {
+    // Find the request in our intercepted requests array
     const request = interceptedRequests.find(req => req.interceptionId === id);
-    if (!request) {
-        console.error(`Intercepted request not found: ${id}`);
-        return;
-    }
-    
+    if (!request) return;
+
     // Create modal if it doesn't exist
-    let modal = document.getElementById('interceptedRequestModal');
-    
+    let modal = document.getElementById('interceptModal');
     if (!modal) {
         modal = document.createElement('div');
-        modal.id = 'interceptedRequestModal';
+        modal.id = 'interceptModal';
         modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <h3>Intercepted Request</h3>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="interceptedMethod">Method:</label>
-                        <input type="text" id="interceptedMethod" class="text-input" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="interceptedUrl">URL:</label>
-                        <input type="text" id="interceptedUrl" class="text-input">
-                    </div>
-                    <div class="form-group">
-                        <label for="interceptedStatus">Status Code:</label>
-                        <input type="number" id="interceptedStatus" class="text-input" placeholder="200">
-                    </div>
-                    <div class="form-group">
-                        <label>Headers:</label>
-                        <button id="addInterceptedHeader" class="button button-small">Add Header</button>
-                        <div id="interceptedHeaders" class="headers-container"></div>
-                    </div>
-                    <div class="form-group">
-                        <label for="interceptedBody">Body:</label>
-                        <textarea id="interceptedBody" class="text-area"></textarea>
-                    </div>
-                    <div class="modal-buttons">
-                        <button id="cancelIntercept" class="button button-secondary">Cancel</button>
-                        <button id="applyChanges" class="button">Save</button>
-                        <button id="forwardRequest" class="button">Forward</button>
-                    </div>
-                </div>
-            </div>
-        `;
         document.body.appendChild(modal);
     }
-    
-    // Fill the modal with request data
-    const methodInput = document.getElementById('interceptedMethod');
-    const urlInput = document.getElementById('interceptedUrl');
-    const statusInput = document.getElementById('interceptedStatus');
-    const bodyInput = document.getElementById('interceptedBody');
-    const headersContainer = document.getElementById('interceptedHeaders');
-    
-    if (methodInput) methodInput.value = request.method;
-    if (urlInput) urlInput.value = request.url;
-    if (statusInput) statusInput.value = request.status || 200;
-    
-    // Parse and format body if it's JSON
-    if (bodyInput) {
-        try {
-            if (typeof request.body === 'object' && request.body !== null) {
-                bodyInput.value = JSON.stringify(request.body, null, 2);
-            } else if (typeof request.body === 'string') {
-                // Try to parse as JSON first
-                try {
-                    const parsedBody = JSON.parse(request.body);
-                    bodyInput.value = JSON.stringify(parsedBody, null, 2);
-                } catch {
-                    // Not JSON, use as is
-                    bodyInput.value = request.body || '';
-                }
-            } else {
-                bodyInput.value = '';
-            }
-        } catch (error) {
-            console.error('Error formatting request body:', error);
-            bodyInput.value = '';
-        }
-    }
-    
-    // Add headers
-    if (headersContainer) {
-        headersContainer.innerHTML = '';
-        
-        if (request.headers) {
-            for (const [name, value] of Object.entries(request.headers)) {
-                // Skip internal headers
-                if (name.startsWith('_')) continue;
+
+    // Populate the modal content
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Edit Intercepted Request</h3>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Method:</label>
+                    <span class="intercepted-method">${request.method}</span>
+                </div>
+                <div class="form-group">
+                    <label>URL:</label>
+                    <span class="intercepted-url">${request.url}</span>
+                </div>
                 
-                addHeaderToContainer(headersContainer, name, value);
-            }
-        }
-    }
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="request-tab">Request</button>
+                    <button class="tab-button" data-tab="response-tab">Response</button>
+                </div>
+                
+                <div id="request-tab" class="tab-content active">
+                    <h4>Headers</h4>
+                    <div id="requestHeadersContainer">
+                        ${Object.entries(request.headers || {}).map(([name, value]) => 
+                            `<div class="header-row">
+                                <input type="text" class="header-name" value="${name}" readonly />
+                                <input type="text" class="header-value" value="${value}" />
+                            </div>`
+                        ).join('')}
+                    </div>
+                    <button id="addRequestHeader" class="button button-small">Add Header</button>
+                    
+                    <h4>Body</h4>
+                    <textarea id="requestBody" class="text-area">${
+                        typeof request.body === 'object' 
+                            ? JSON.stringify(request.body, null, 2) 
+                            : request.body || ''
+                    }</textarea>
+                </div>
+                
+                <div id="response-tab" class="tab-content">
+                    <div class="form-group">
+                        <label for="customStatusCode">Status Code:</label>
+                        <input type="number" id="customStatusCode" class="text-input" value="200" />
+                    </div>
+                    
+                    <h4>Response Headers</h4>
+                    <div id="responseHeadersContainer"></div>
+                    <button id="addResponseHeader" class="button button-small">Add Header</button>
+                    
+                    <h4>Response Body</h4>
+                    <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
+                    
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="useCustomResponse" checked>
+                            <span class="toggle-switch"></span>
+                            Override Response
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
+                    <button id="applyChanges" class="button button-primary">Apply Changes</button>
+                    <button id="forwardWithChanges" class="button">Forward</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Show the modal
+    modal.classList.add('active');
     
-    // Setup event listeners
+    // Set up event listeners for the modal
     setupInterceptModalListeners(id);
     
-    // Show the modal
-    modal.style.display = 'flex';
+    // Initialize tabs
+    setupTabs();
+    
+    // Add a few empty response headers by default
+    addHeaderToContainer(document.getElementById('responseHeadersContainer'), 'Content-Type', 'application/json');
+}
+
+function setupTabs() {
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            button.classList.add('active');
+            const tabId = button.dataset.tab;
+            document.getElementById(tabId).classList.add('active');
+        });
+    });
 }
 
 function addHeaderToContainer(container, name = '', value = '') {
@@ -1232,83 +1239,41 @@ function addHeaderToContainer(container, name = '', value = '') {
 }
 
 function setupInterceptModalListeners(requestId) {
-    const modal = document.getElementById('interceptedRequestModal');
-    const cancelBtn = document.getElementById('cancelIntercept');
-    const applyBtn = document.getElementById('applyChanges');
-    const forwardBtn = document.getElementById('forwardRequest');
-    const addHeaderBtn = document.getElementById('addInterceptedHeader');
+    // Close the modal when the close button is clicked
+    document.getElementById('closeInterceptModal').addEventListener('click', () => {
+        document.getElementById('interceptModal').classList.remove('active');
+    });
     
-    if (!modal) return;
-    
-    // Close modal when cancel is clicked
-    if (cancelBtn) {
-        // Remove existing listeners
-        const newCancelBtn = cancelBtn.cloneNode(true);
-        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-        
-        newCancelBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-    }
-    
-    // Close modal when clicking outside
+    // Close when clicking outside the modal content
     const closeOnOutsideClick = (event) => {
+        const modal = document.getElementById('interceptModal');
         if (event.target === modal) {
-            modal.style.display = 'none';
+            modal.classList.remove('active');
         }
     };
     
-    // Remove existing event listener
-    window.removeEventListener('click', closeOnOutsideClick);
-    // Add new event listener
     window.addEventListener('click', closeOnOutsideClick);
     
-    // Add header button
-    if (addHeaderBtn) {
-        // Remove existing listeners
-        const newAddHeaderBtn = addHeaderBtn.cloneNode(true);
-        addHeaderBtn.parentNode.replaceChild(newAddHeaderBtn, addHeaderBtn);
-        
-        newAddHeaderBtn.addEventListener('click', () => {
-            const headersContainer = document.getElementById('interceptedHeaders');
-            addHeaderToContainer(headersContainer);
-        });
-    }
+    // Add request header button
+    document.getElementById('addRequestHeader').addEventListener('click', () => {
+        addHeaderToContainer(document.getElementById('requestHeadersContainer'));
+    });
     
-    // Apply changes button (Save)
-    if (applyBtn) {
-        // Remove existing listeners
-        const newApplyBtn = applyBtn.cloneNode(true);
-        applyBtn.parentNode.replaceChild(newApplyBtn, applyBtn);
-        
-        newApplyBtn.addEventListener('click', () => {
-            applyInterceptedChanges(requestId);
-            console.log('Changes saved for request:', requestId);
-            // Close the modal after saving
-            modal.style.display = 'none';
-            // Show a temporary success message
-            const requestElement = document.querySelector(`.intercepted-request[data-id="${requestId}"]`);
-            if (requestElement) {
-                requestElement.classList.add('saved');
-                setTimeout(() => {
-                    requestElement.classList.remove('saved');
-                }, 1000);
-            }
-        });
-    }
+    // Add response header button
+    document.getElementById('addResponseHeader').addEventListener('click', () => {
+        addHeaderToContainer(document.getElementById('responseHeadersContainer'));
+    });
     
-    // Forward button
-    if (forwardBtn) {
-        // Remove existing listeners
-        const newForwardBtn = forwardBtn.cloneNode(true);
-        forwardBtn.parentNode.replaceChild(newForwardBtn, forwardBtn);
-        
-        newForwardBtn.addEventListener('click', () => {
-            applyInterceptedChanges(requestId);
-            forwardInterceptedRequest(requestId);
-            modal.style.display = 'none';
-        });
-    }
+    // Apply changes button
+    document.getElementById('applyChanges').addEventListener('click', () => {
+        applyInterceptedChanges(requestId);
+    });
+    
+    // Forward with changes button
+    document.getElementById('forwardWithChanges').addEventListener('click', () => {
+        applyInterceptedChanges(requestId);
+        forwardInterceptedRequest(requestId);
+    });
 }
 
 function applyInterceptedChanges(requestId) {
@@ -1391,53 +1356,70 @@ function applyInterceptedChanges(requestId) {
 }
 
 function forwardInterceptedRequest(requestId) {
-    if (!requestId) return;
+    // Find if we have any custom response data from the modal
+    const useCustomResponse = document.getElementById('useCustomResponse')?.checked || false;
     
-    console.log(`Forwarding intercepted request: ${requestId}`);
+    let customResponseData = null;
     
-    // Get the request from our local store
-    const request = interceptedRequests.find(req => req.interceptionId === requestId);
-    if (!request) {
-        console.error(`Request not found: ${requestId}`);
-        return;
+    if (useCustomResponse) {
+        const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
+        
+        // Get custom response headers
+        const responseHeaders = {};
+        document.querySelectorAll('#responseHeadersContainer .header-row').forEach(row => {
+            const name = row.querySelector('.header-name').value;
+            const value = row.querySelector('.header-value').value;
+            if (name && value) {
+                responseHeaders[name] = value;
+            }
+        });
+        
+        // Get custom response body
+        let responseBody = document.getElementById('customResponseBody')?.value || '';
+        try {
+            // Try to parse as JSON, but keep as string if it fails
+            responseBody = JSON.parse(responseBody);
+        } catch (e) {
+            // Leave as string if not valid JSON
+        }
+        
+        customResponseData = {
+            statusCode,
+            headers: responseHeaders,
+            body: responseBody
+        };
     }
     
-    // Send request to server to forward the intercepted request
-    fetch(`/forward-request/${requestId}`, {
+    // Make the request to forward the intercepted request
+    fetch(`/forward-intercepted-request/${requestId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request) // Send the modified request data
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            customResponse: useCustomResponse ? customResponseData : null
+        })
     })
     .then(response => response.json())
     .then(data => {
-        console.log('Request forwarded:', data);
-        
-        // Close modal if it's open
-        const modal = document.getElementById('interceptedRequestModal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        
-        // Remove the request from the UI
-        const requestElement = document.querySelector(`.intercepted-request[data-id="${requestId}"]`);
-        if (requestElement) {
-            requestElement.remove();
-        }
-        
-        // Update the intercepted requests list
-        const index = interceptedRequests.findIndex(req => req.interceptionId === requestId);
-        if (index !== -1) {
-            interceptedRequests.splice(index, 1);
-        }
-        
-        // If there are no more intercepted requests, update the UI
-        if (interceptedRequests.length === 0) {
+        if (data.success) {
+            // Remove the request from our list
+            interceptedRequests = interceptedRequests.filter(
+                req => req.interceptionId !== requestId
+            );
             updateInterceptedRequestsUI();
+            
+            // Close the modal if it's open
+            const modal = document.getElementById('interceptModal');
+            if (modal) modal.classList.remove('active');
+        } else {
+            console.error('Error forwarding request:', data.error);
+            alert(`Error forwarding request: ${data.error}`);
         }
     })
     .catch(error => {
         console.error('Error forwarding request:', error);
-        alert('Error forwarding request: ' + error.message);
+        alert(`Error forwarding request: ${error.message}`);
     });
 }
 

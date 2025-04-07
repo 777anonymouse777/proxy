@@ -53,7 +53,7 @@ function loadMocksFromDisk() {
                 console.log('Mocks file is empty, starting with empty mocks');
                 mocks = [];
                 return;
-            }
+            }  
             
             try {
                 mocks = JSON.parse(data);
@@ -693,6 +693,70 @@ app.post('/forward-request/:id', (req, res) => {
         res.status(500).json({ 
             success: false, 
             error: error.message 
+        });
+    }
+});
+
+// Add this to your proxy.js file where you handle request forwarding
+app.post('/forward-intercepted-request/:id', (req, res) => {
+    const requestId = req.params.id;
+    const { customResponse } = req.body;
+    
+    try {
+        // Get the intercepted request
+        const interceptedRequest = interceptQueue.getRequest(requestId);
+        
+        if (!interceptedRequest) {
+            return res.status(404).json({
+                success: false,
+                error: 'Intercepted request not found'
+            });
+        }
+        
+        // If there's a custom response, apply it
+        if (customResponse) {
+            // Instead of forwarding to target, send the custom response directly
+            const originalRes = interceptedRequest._response;
+            
+            // Set status code
+            originalRes.status(customResponse.statusCode || 200);
+            
+            // Set headers
+            if (customResponse.headers) {
+                Object.entries(customResponse.headers).forEach(([name, value]) => {
+                    originalRes.set(name, value);
+                });
+            }
+            
+            // Send the body
+            originalRes.send(customResponse.body);
+            
+            // Remove from the queue
+            interceptQueue.dropRequest(requestId);
+            
+            // Log this as a custom response
+            console.log(`Sent custom response for intercepted request ${requestId}`);
+            if (broadcastLog) {
+                broadcastLog({
+                    timestamp: new Date().toISOString(),
+                    method: interceptedRequest.method,
+                    url: interceptedRequest.url,
+                    status: customResponse.statusCode || 200,
+                    tag: 'custom-response'
+                });
+            }
+            
+            return res.json({ success: true });
+        } else {
+            // Forward without custom response
+            interceptQueue.forwardRequest(requestId);
+            return res.json({ success: true });
+        }
+    } catch (error) {
+        console.error('Error forwarding intercepted request:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
