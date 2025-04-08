@@ -896,11 +896,27 @@ function setupInterceptUI() {
         </div>
     `;
     
+    // Create "Intercept All" toggle
+    const interceptAllContainer = document.createElement('div');
+    interceptAllContainer.className = 'intercept-all-container';
+    interceptAllContainer.innerHTML = `
+        <div class="intercept-all-header">
+            <div class="toggle-container">
+                <label class="toggle-label">
+                    <input type="checkbox" id="interceptAllToggle">
+                    <span class="toggle-switch"></span>
+                    <strong>Intercept All Requests</strong>
+                </label>
+            </div>
+            <p class="intercept-help">When enabled, all requests will be intercepted regardless of rules below.</p>
+        </div>
+    `;
+    
     // Create rules container similar to mocks container
     const rulesContainer = document.createElement('div');
     rulesContainer.id = 'interceptRulesContainer';
     rulesContainer.className = 'mocks-container';
-    rulesContainer.innerHTML = '<div class="intercept-placeholder">No intercept rules yet. All requests will be intercepted when Intercept Mode is on.</div>';
+    rulesContainer.innerHTML = '<div class="intercept-placeholder">No intercept rules yet. All requests will be intercepted when Intercept Mode is on and Intercept All is enabled.</div>';
     
     // Create intercepted requests section
     const requestsSection = document.createElement('div');
@@ -913,6 +929,7 @@ function setupInterceptUI() {
     // Add sections to the card
     interceptCard.innerHTML = '';
     interceptCard.appendChild(cardHeader);
+    interceptCard.appendChild(interceptAllContainer);
     interceptCard.appendChild(rulesContainer);
     interceptCard.appendChild(requestsSection);
     
@@ -920,6 +937,36 @@ function setupInterceptUI() {
     document.getElementById('interceptToggle').addEventListener('change', (e) => {
         const enabled = e.target.checked;
         toggleInterceptMode(enabled);
+    });
+    
+    document.getElementById('interceptAllToggle').addEventListener('change', (e) => {
+        const enabled = e.target.checked;
+        fetch('/update-intercept-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('Intercept all mode updated:', enabled);
+                updateInterceptUI();
+                // Display a message to the user
+                const message = enabled 
+                    ? 'All requests will be intercepted regardless of rules'
+                    : 'Only requests matching rules will be intercepted';
+                console.log(message);
+            } else {
+                console.error('Failed to update intercept all mode:', data.error);
+                // Revert the toggle
+                document.getElementById('interceptAllToggle').checked = !enabled;
+            }
+        })
+        .catch(error => {
+            console.error('Error updating intercept all mode:', error);
+            // Revert the toggle
+            document.getElementById('interceptAllToggle').checked = !enabled;
+        });
     });
     
     // Setup add rule button
@@ -1132,6 +1179,13 @@ function checkInterceptStatus() {
                 if (interceptToggle) {
                     interceptToggle.checked = interceptEnabled;
                 }
+                
+                // Update intercept all toggle
+                const interceptAllToggle = document.getElementById('interceptAllToggle');
+                if (interceptAllToggle && data.interceptAllRequests !== undefined) {
+                    interceptAllToggle.checked = data.interceptAllRequests;
+                }
+                
                 updateInterceptUI();
                 
                 if (interceptEnabled) {
@@ -1144,9 +1198,7 @@ function checkInterceptStatus() {
                                 updateInterceptedRequestsUI();
                             }
                         })
-                        .catch(error => {
-                            console.error('Error fetching intercepted requests:', error);
-                        });
+                        .catch(error => console.error('Error fetching intercepted requests:', error));
                 }
             }
         })
