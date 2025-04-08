@@ -499,6 +499,143 @@ app.post('/mocks/deactivate-all', (req, res) => {
     });
 });
 
+// Endpoint to get intercept rules
+app.get('/intercept-rules', (req, res) => {
+    // Create intercept rules file if it doesn't exist
+    if (!fs.existsSync('./data/intercept-rules.json')) {
+        fs.writeFileSync('./data/intercept-rules.json', '[]', 'utf8');
+    }
+    
+    // Read existing rules
+    const rules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+    res.json({ success: true, rules });
+});
+
+// Create new intercept rule
+app.post('/intercept-rules', (req, res) => {
+    const { method, path, enabled = true } = req.body;
+    
+    if (!method || !path) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Method and path are required' 
+        });
+    }
+    
+    // Create a new rule
+    const rule = {
+        id: uuidv4(),
+        method,
+        path,
+        enabled,
+        createdAt: new Date().toISOString()
+    };
+    
+    // Read existing rules
+    let rules = [];
+    try {
+        // Create dir if it doesn't exist
+        if (!fs.existsSync('./data')) {
+            fs.mkdirSync('./data');
+        }
+        
+        // Create file if it doesn't exist
+        if (!fs.existsSync('./data/intercept-rules.json')) {
+            fs.writeFileSync('./data/intercept-rules.json', '[]', 'utf8');
+        }
+        
+        rules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+    } catch (error) {
+        console.error('Error reading intercept rules:', error);
+        rules = [];
+    }
+    
+    // Add the new rule
+    rules.push(rule);
+    
+    // Save to disk
+    fs.writeFileSync('./data/intercept-rules.json', JSON.stringify(rules, null, 2), 'utf8');
+    
+    res.json({ success: true, rule });
+});
+
+// Update an intercept rule
+app.put('/intercept-rules/:id', (req, res) => {
+    const { id } = req.params;
+    const { method, path, enabled } = req.body;
+    
+    // Read existing rules
+    let rules = [];
+    try {
+        rules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+    } catch (error) {
+        console.error('Error reading intercept rules:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: 'Failed to read intercept rules' 
+        });
+    }
+    
+    // Find the rule to update
+    const index = rules.findIndex(rule => rule.id === id);
+    
+    if (index === -1) {
+        return res.status(404).json({ 
+            success: false, 
+            error: 'Intercept rule not found' 
+        });
+    }
+    
+    // Update the rule
+    rules[index] = {
+        ...rules[index],
+        method: method || rules[index].method,
+        path: path !== undefined ? path : rules[index].path,
+        enabled: enabled !== undefined ? enabled : rules[index].enabled,
+        updatedAt: new Date().toISOString()
+    };
+    
+    // Save to disk
+    fs.writeFileSync('./data/intercept-rules.json', JSON.stringify(rules, null, 2), 'utf8');
+    
+    res.json({ success: true, rule: rules[index] });
+});
+
+// Delete an intercept rule
+app.delete('/intercept-rules/:id', (req, res) => {
+    const { id } = req.params;
+    
+    // Read existing rules
+    let rules = [];
+    try {
+        rules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+    } catch (error) {
+        console.error('Error reading intercept rules:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: 'Failed to read intercept rules' 
+        });
+    }
+    
+    // Find the rule to delete
+    const index = rules.findIndex(rule => rule.id === id);
+    
+    if (index === -1) {
+        return res.status(404).json({ 
+            success: false, 
+            error: 'Intercept rule not found' 
+        });
+    }
+    
+    // Remove the rule
+    rules.splice(index, 1);
+    
+    // Save to disk
+    fs.writeFileSync('./data/intercept-rules.json', JSON.stringify(rules, null, 2), 'utf8');
+    
+    res.json({ success: true });
+});
+
 // Error handling middleware - Add this before the static file middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err);
@@ -797,23 +934,56 @@ function setupProxyMiddleware() {
 
         // Check if intercept mode is enabled
         if (interceptQueue.isInterceptionEnabled()) {
-            console.log(`Intercepting request: ${req.method} ${req.url}`);
+            console.log(`Checking intercept rules for: ${req.method} ${req.url}`);
             
-            // Intercept the request and broadcast the interception
-            return interceptQueue.intercept(req, res, next, (interceptId) => {
-                // Prepare intercepted request data to send to clients
-                const interceptData = {
-                    interceptionId: interceptId,
-                    timestamp: new Date().toISOString(),
-                    method: req.method,
-                    url: req.url,
-                    headers: req.headers,
-                    body: req.body
-                };
+            // Load intercept rules
+            let interceptRules = [];
+            try {
+                if (fs.existsSync('./data/intercept-rules.json')) {
+                    interceptRules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+                }
+            } catch (error) {
+                console.error('Error reading intercept rules:', error);
+            }
+            
+            // If there are no rules or one rule matches, intercept the request
+            const shouldIntercept = 
+                interceptRules.length === 0 || // If no rules, intercept all
+                interceptRules.some(rule => {
+                    // Skip disabled rules
+                    if (!rule.enabled) return false;
+                    
+                    // Check if method matches (ALL method matches any request method)
+                    if (rule.method && rule.method !== 'ALL' && rule.method !== req.method) return false;
+                    
+                    // Match exact path or with wildcard support
+                    const pathMatches = rule.path === req.path || 
+                        (rule.path.endsWith('*') && req.path.startsWith(rule.path.slice(0, -1)));
+                    
+                    return pathMatches;
+                });
+            
+            if (shouldIntercept) {
+                console.log(`Intercepting request: ${req.method} ${req.url}`);
                 
-                // Broadcast the intercepted request to WebSocket clients
-                broadcastLog(interceptData);
-            });
+                // Intercept the request and broadcast the interception
+                return interceptQueue.intercept(req, res, next, (interceptId) => {
+                    // Prepare intercepted request data to send to clients
+                    const interceptData = {
+                        interceptionId: interceptId,
+                        timestamp: new Date().toISOString(),
+                        method: req.method,
+                        url: req.url,
+                        headers: req.headers,
+                        body: req.body
+                    };
+                    
+                    // Broadcast the intercepted request to WebSocket clients
+                    broadcastLog(interceptData);
+                });
+            } else {
+                console.log(`Not intercepting request (no matching rule): ${req.method} ${req.url}`);
+            }
         }
 
         // Log the request regardless if it's mocked or actual
@@ -1201,6 +1371,25 @@ app.get('/download-logs/:filename', (req, res) => {
         res.download(filePath);
     } catch (error) {
         console.error('Error downloading log file:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Add endpoint to check intercept status
+app.get('/intercept-status', (req, res) => {
+    try {
+        const isInterceptEnabled = interceptQueue.isInterceptionEnabled();
+        console.log('Current intercept status:', isInterceptEnabled);
+        
+        res.json({
+            success: true,
+            interceptEnabled: isInterceptEnabled
+        });
+    } catch (error) {
+        console.error('Error getting intercept status:', error);
         res.status(500).json({
             success: false,
             error: error.message

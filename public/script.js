@@ -19,6 +19,9 @@ let interceptedRequests = [];
 let mockStates = new Map(); // Store the state of mocks before intercept mode
 let isInitialMockStateCapture = true; // Flag to track initial state capture
 
+// Global variable to store intercept rules
+let interceptRules = [];
+
 // Fetch server info and update UI 
 function fetchServerInfo() {
     fetch('/info')
@@ -334,18 +337,38 @@ function showLogDetails(logData) {
 }
 
 // Initialize everything when the DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Setup UI components
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize WebSocket connection
+    connectWebSocket();
+    
+    // Fetch server info
+    fetchServerInfo();
+    
+    // Setup target URL update
     setupTargetUrlUpdate();
+    
+    // Setup clear logs button
     setupClearLogs();
-    setupMocksModal();
-    setupGuideToggle();
+    
+    // Setup log search
     setupLogSearch();
+    
+    // Setup log details modal
     setupLogDetailsModal();
+    
+    // Setup guide toggle
+    setupGuideToggle();
+    
+    // Setup mocks modal
+    setupMocksModal();
+    
+    // Fetch mocks
+    fetchMocks();
+    
+    // Setup intercept UI
     setupInterceptUI();
     
-    // Connect to WebSocket for real-time logs
-    connectWebSocket();
+    // Setup mock toggle handlers
     setupMockToggleHandlers();
 });
 
@@ -853,54 +876,283 @@ function updateMocksUI(mocks) {
 }
 
 function setupInterceptUI() {
-    const statusCard = document.querySelector('.status-card');
-    const mocksCard = document.querySelector('.mocks-card');
-    const logCard = document.querySelector('.log-card');
-    const dashboardGrid = document.querySelector('.dashboard-grid');
+    const interceptCard = document.querySelector('.intercept-card');
+    if (!interceptCard) return;
     
-    if (!statusCard || !mocksCard || !logCard || !dashboardGrid) return;
-    
-    // Create intercept card if it doesn't exist
-    let interceptCard = document.querySelector('.intercept-card');
-    if (!interceptCard) {
-        interceptCard = document.createElement('div');
-        interceptCard.className = 'card intercept-card';
-        interceptCard.innerHTML = `
-            <div class="compact-header">
-                <h2>Intercept Requests</h2>
-                <div class="intercept-controls">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="interceptToggle">
-                        <span class="toggle-switch"></span>
-                        <span>Intercept Mode</span>
-                    </label>
-                </div>
+    // Create a header similar to mocks UI
+    const cardHeader = document.createElement('div');
+    cardHeader.className = 'card-header';
+    cardHeader.innerHTML = `
+        <h2>Intercept Requests</h2>
+        <div>
+            <button id="addInterceptRule" class="button button-secondary">Add Rule</button>
+            <div class="toggle-container" style="display: inline-block; margin-left: 10px;">
+                <label class="toggle-label">
+                    <input type="checkbox" id="interceptToggle">
+                    <span class="toggle-switch"></span>
+                    Intercept Mode
+                </label>
             </div>
-            <div class="intercept-container" id="interceptContainer">
-                <div class="intercept-placeholder">
-                    Enable intercept mode to inspect and modify requests in real-time.
+        </div>
+    `;
+    
+    // Create rules container similar to mocks container
+    const rulesContainer = document.createElement('div');
+    rulesContainer.id = 'interceptRulesContainer';
+    rulesContainer.className = 'mocks-container';
+    rulesContainer.innerHTML = '<div class="intercept-placeholder">No intercept rules yet. All requests will be intercepted when Intercept Mode is on.</div>';
+    
+    // Create intercepted requests section
+    const requestsSection = document.createElement('div');
+    requestsSection.className = 'intercepted-requests';
+    requestsSection.innerHTML = `
+        <h3>Intercepted Requests</h3>
+        <div id="interceptedRequests" class="intercepted-requests-list"></div>
+    `;
+    
+    // Add sections to the card
+    interceptCard.innerHTML = '';
+    interceptCard.appendChild(cardHeader);
+    interceptCard.appendChild(rulesContainer);
+    interceptCard.appendChild(requestsSection);
+    
+    // Set up event listeners
+    document.getElementById('interceptToggle').addEventListener('change', (e) => {
+        const enabled = e.target.checked;
+        toggleInterceptMode(enabled);
+    });
+    
+    // Setup add rule button
+    setupAddInterceptRule();
+    
+    // Check current intercept status
+    checkInterceptStatus();
+    
+    // Fetch initial intercept rules
+    fetchInterceptRules();
+}
+
+// Update the UI to display intercept rules
+function updateInterceptRulesUI() {
+    const container = document.getElementById('interceptRulesContainer');
+    if (!container) return;
+    
+    if (interceptRules.length === 0) {
+        container.innerHTML = `
+            <div class="intercept-placeholder">
+                <p><strong>Intercept Mode:</strong> With no rules defined, ALL requests will be intercepted when enabled.</p>
+                <p>Add specific rules below if you want to intercept only certain requests.</p>
+            </div>
+            <div class="intercept-info">
+                <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
+            </div>
+        `;
+        
+        // Add event listener for the "Add All Requests Rule" button
+        setTimeout(() => {
+            const addAllButton = document.getElementById('addAllRequestsRule');
+            if (addAllButton) {
+                addAllButton.addEventListener('click', () => {
+                    addInterceptRule({
+                        method: 'ALL',
+                        path: '/*',
+                        enabled: true
+                    });
+                });
+            }
+        }, 0);
+        
+        return;
+    }
+    
+    let html = '';
+    
+    interceptRules.forEach(rule => {
+        html += `
+            <div class="mock-item" data-id="${rule.id}">
+                <div class="mock-details">
+                    <div class="mock-method ${rule.method === 'ALL' ? 'method-all' : ''}">${rule.method}</div>
+                    <div class="mock-path">${rule.path}</div>
                 </div>
-                <div id="interceptedRequests" class="intercepted-requests" style="display: none;">
-                    <h3 class="compact-h3">Intercepted Requests</h3>
-                    <div id="interceptedRequestsList" class="intercepted-requests-list"></div>
+                <div class="mock-actions">
+                    <label class="toggle-label">
+                        <input type="checkbox" class="rule-toggle" data-id="${rule.id}" ${rule.enabled ? 'checked' : ''}>
+                        <span class="toggle-switch"></span>
+                    </label>
+                    <button class="mock-action-btn mock-action-delete rule-delete" data-id="${rule.id}" title="Delete Rule">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;
-    }
+    });
     
-    // Insert intercept card after mocks card
-    if (mocksCard.nextSibling) {
-        dashboardGrid.insertBefore(interceptCard, mocksCard.nextSibling);
-    } else {
-        dashboardGrid.appendChild(interceptCard);
-    }
+    container.innerHTML = html;
     
-    // Move logs card to the bottom
-    dashboardGrid.removeChild(logCard);
-    dashboardGrid.appendChild(logCard);
+    // Add event listeners for rule toggles
+    document.querySelectorAll('.rule-toggle').forEach(toggle => {
+        toggle.addEventListener('change', (e) => {
+            const id = e.target.dataset.id;
+            const enabled = e.target.checked;
+            updateInterceptRule(id, { enabled });
+        });
+    });
     
-    // Setup event listeners
-    setupInterceptControls();
+    // Add event listeners for delete buttons
+    document.querySelectorAll('.rule-delete').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const id = e.target.closest('.rule-delete').dataset.id;
+            if (confirm('Are you sure you want to delete this intercept rule?')) {
+                deleteInterceptRule(id);
+            }
+        });
+    });
+}
+
+// Set up UI for adding new intercept rules
+function setupAddInterceptRule() {
+    const addRuleButton = document.getElementById('addInterceptRule');
+    if (!addRuleButton) return;
+    
+    addRuleButton.addEventListener('click', () => {
+        // Show the mock modal but adapt it for intercept rules
+        const mockModal = document.getElementById('mockModal');
+        const mockModalTitle = document.getElementById('mockModalTitle');
+        const saveMockBtn = document.getElementById('saveMock');
+        
+        if (!mockModal || !mockModalTitle || !saveMockBtn) {
+            // Use simple prompt as fallback
+            const method = prompt('HTTP Method (GET, POST, etc. or ALL for any method):');
+            const path = prompt('Path to intercept (e.g., /api/users or /api/*):');
+            
+            if (method && path) {
+                addInterceptRule({
+                    method,
+                    path,
+                    enabled: true
+                });
+            }
+            return;
+        }
+        
+        // Reset form and prepare for intercept rule
+        const mockPath = document.getElementById('mockPath');
+        if (mockPath) mockPath.value = '';
+        
+        // Reset method selection
+        const methodButtons = document.querySelectorAll('.method-button');
+        methodButtons.forEach(btn => btn.classList.remove('active'));
+        const getMethodBtn = document.querySelector('.method-button[data-method="GET"]');
+        if (getMethodBtn) {
+            getMethodBtn.classList.add('active');
+        }
+        
+        // Add ALL method button if it doesn't exist
+        const methodContainer = document.querySelector('.method-buttons');
+        if (methodContainer && !document.querySelector('.method-button[data-method="ALL"]')) {
+            const allButton = document.createElement('button');
+            allButton.className = 'method-button';
+            allButton.setAttribute('data-method', 'ALL');
+            allButton.textContent = 'ALL';
+            
+            // Add event listener
+            allButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                methodButtons.forEach(btn => btn.classList.remove('active'));
+                allButton.classList.add('active');
+            });
+            
+            // Add to container before the first method button
+            methodContainer.insertBefore(allButton, methodContainer.firstChild);
+        }
+        
+        // Set modal title and button text
+        mockModalTitle.textContent = 'Add Intercept Rule';
+        saveMockBtn.textContent = 'Add Rule';
+        
+        // Hide mock-specific elements
+        const statusElement = document.getElementById('mockStatus');
+        const responseElement = document.getElementById('mockResponse');
+        const bodyMatchSection = document.querySelector('.body-match-section');
+        const queryParamSection = document.querySelector('#queryParamsContainer').parentElement;
+        
+        if (statusElement) statusElement.parentElement.style.display = 'none';
+        if (responseElement) responseElement.parentElement.style.display = 'none';
+        if (bodyMatchSection) bodyMatchSection.style.display = 'none';
+        if (queryParamSection) queryParamSection.style.display = 'none';
+        
+        // Store the original save handler
+        const originalSaveHandler = saveMockBtn.onclick;
+        
+        // Override the save button handler
+        saveMockBtn.onclick = () => {
+            const method = document.querySelector('.method-button.active').getAttribute('data-method');
+            const path = mockPath.value;
+            
+            if (!path) {
+                alert('Path is required');
+                return;
+            }
+            
+            // Add intercept rule
+            addInterceptRule({
+                method,
+                path,
+                enabled: true
+            });
+            
+            // Hide modal
+            mockModal.style.display = 'none';
+            
+            // Restore original elements' visibility
+            if (statusElement) statusElement.parentElement.style.display = 'block';
+            if (responseElement) responseElement.parentElement.style.display = 'block';
+            if (queryParamSection) queryParamSection.style.display = 'block';
+            
+            // Restore original save handler
+            saveMockBtn.onclick = originalSaveHandler;
+        };
+        
+        // Show modal
+        mockModal.style.display = 'flex';
+    });
+}
+
+// Check current intercept status
+function checkInterceptStatus() {
+    fetch('/intercept-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                interceptEnabled = data.interceptEnabled;
+                const interceptToggle = document.getElementById('interceptToggle');
+                if (interceptToggle) {
+                    interceptToggle.checked = interceptEnabled;
+                }
+                updateInterceptUI();
+                
+                if (interceptEnabled) {
+                    // If intercept is enabled, fetch any pending requests
+                    fetch('/intercepted-requests')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && data.requests) {
+                                interceptedRequests = data.requests;
+                                updateInterceptedRequestsUI();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching intercepted requests:', error);
+                        });
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking intercept status:', error);
+        });
 }
 
 function setupInterceptControls() {
@@ -1038,18 +1290,34 @@ function toggleMocksUI(enabled) {
 }
 
 function updateInterceptUI() {
-    const interceptContainer = document.getElementById('interceptContainer');
-    const interceptedRequestsContainer = document.getElementById('interceptedRequests');
-    const interceptPlaceholder = document.querySelector('.intercept-placeholder');
+    console.log('Updating intercept UI, interceptEnabled:', interceptEnabled);
     
-    if (!interceptContainer) return;
+    const interceptCard = document.querySelector('.intercept-card');
+    const interceptToggle = document.getElementById('interceptToggle');
+    const requestsSection = document.querySelector('.intercepted-requests');
     
+    if (!interceptCard) return;
+    
+    // Update toggle state
+    if (interceptToggle) {
+        interceptToggle.checked = interceptEnabled;
+    }
+    
+    // Show/hide intercepted requests section
+    if (requestsSection) {
+        requestsSection.style.display = interceptEnabled ? 'block' : 'none';
+    }
+    
+    // Add or remove "active" class to the card
     if (interceptEnabled) {
-        if (interceptPlaceholder) interceptPlaceholder.style.display = 'none';
-        interceptedRequestsContainer.style.display = 'block';
+        interceptCard.classList.add('active');
     } else {
-        if (interceptPlaceholder) interceptPlaceholder.style.display = 'block';
-        interceptedRequestsContainer.style.display = 'none';
+        interceptCard.classList.remove('active');
+    }
+    
+    // Update the intercepted requests list
+    if (interceptEnabled) {
+        updateInterceptedRequestsUI();
     }
 }
 
@@ -1068,8 +1336,10 @@ function updateInterceptedRequestsUI() {
     const container = document.getElementById('interceptedRequests');
     if (!container) return;
     
+    console.log('Updating intercepted requests UI, count:', interceptedRequests.length);
+    
     if (interceptedRequests.length === 0) {
-        container.innerHTML = '<div class="intercept-placeholder">No intercepted requests yet.</div>';
+        container.innerHTML = '<div class="intercept-placeholder">No intercepted requests yet. Send requests to your API to see them here.</div>';
         return;
     }
     
@@ -1077,15 +1347,23 @@ function updateInterceptedRequestsUI() {
     
     interceptedRequests.forEach(req => {
         html += `
-            <div class="intercepted-request" data-id="${req.interceptionId}">
-                <div class="intercepted-request-info">
-                    <span class="intercepted-method">${req.method}</span>
-                    <span class="intercepted-url">${req.url}</span>
-                    ${req.statusCode ? `<span class="intercepted-status">${req.statusCode}</span>` : ''}
+            <div class="mock-item intercepted-request" data-id="${req.interceptionId}">
+                <div class="mock-details">
+                    <div class="mock-method">${req.method}</div>
+                    <div class="mock-path">${req.url}</div>
+                    ${req.statusCode ? `<div class="mock-status">${req.statusCode}</div>` : ''}
                 </div>
-                <div class="intercepted-actions">
-                    <button class="button button-small view-intercepted" data-id="${req.interceptionId}">View/Edit</button>
-                    <button class="button button-primary forward-intercepted" data-id="${req.interceptionId}">Forward</button>
+                <div class="mock-actions">
+                    <button class="mock-action-btn mock-action-edit view-intercepted" data-id="${req.interceptionId}" title="Override">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/>
+                        </svg>
+                    </button>
+                    <button class="mock-action-btn forward-intercepted" data-id="${req.interceptionId}" title="Forward">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;
@@ -1096,14 +1374,14 @@ function updateInterceptedRequestsUI() {
     // Add event listeners
     document.querySelectorAll('.view-intercepted').forEach(button => {
         button.addEventListener('click', (e) => {
-            const id = e.target.dataset.id;
+            const id = e.target.closest('.view-intercepted').dataset.id;
             showInterceptedRequestModal(id);
         });
     });
     
     document.querySelectorAll('.forward-intercepted').forEach(button => {
         button.addEventListener('click', (e) => {
-            const id = e.target.dataset.id;
+            const id = e.target.closest('.forward-intercepted').dataset.id;
             forwardInterceptedRequest(id);
         });
     });
@@ -1126,7 +1404,7 @@ function showInterceptedRequestModal(id) {
     // Populate the modal content
     modal.innerHTML = `
         <div class="modal-content">
-            <h3>Edit Intercepted Request</h3>
+            <h3>Override Intercepted Request</h3>
             <div class="modal-body">
                 <div class="form-group">
                     <label>Method:</label>
@@ -1186,7 +1464,6 @@ function showInterceptedRequestModal(id) {
                 
                 <div class="modal-buttons">
                     <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
-                    <button id="applyChanges" class="button button-primary">Apply Changes</button>
                     <button id="forwardWithChanges" class="button">Forward</button>
                 </div>
             </div>
@@ -1262,11 +1539,6 @@ function setupInterceptModalListeners(requestId) {
     // Add response header button
     document.getElementById('addResponseHeader').addEventListener('click', () => {
         addHeaderToContainer(document.getElementById('responseHeadersContainer'));
-    });
-    
-    // Apply changes button
-    document.getElementById('applyChanges').addEventListener('click', () => {
-        applyInterceptedChanges(requestId);
     });
     
     // Forward with changes button
@@ -1356,38 +1628,45 @@ function applyInterceptedChanges(requestId) {
 }
 
 function forwardInterceptedRequest(requestId) {
-    // Find if we have any custom response data from the modal
-    const useCustomResponse = document.getElementById('useCustomResponse')?.checked || false;
+    // Always disable custom response override when forwarding directly
+    const modal = document.getElementById('interceptModal');
+    const isFromModal = modal && modal.classList.contains('active');
     
+    let useCustomResponse = false;
     let customResponseData = null;
     
-    if (useCustomResponse) {
-        const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
+    // Only use custom response if we're coming from the modal
+    if (isFromModal) {
+        useCustomResponse = document.getElementById('useCustomResponse')?.checked || false;
         
-        // Get custom response headers
-        const responseHeaders = {};
-        document.querySelectorAll('#responseHeadersContainer .header-row').forEach(row => {
-            const name = row.querySelector('.header-name').value;
-            const value = row.querySelector('.header-value').value;
-            if (name && value) {
-                responseHeaders[name] = value;
+        if (useCustomResponse) {
+            const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
+            
+            // Get custom response headers
+            const responseHeaders = {};
+            document.querySelectorAll('#responseHeadersContainer .header-row').forEach(row => {
+                const name = row.querySelector('.header-name').value;
+                const value = row.querySelector('.header-value').value;
+                if (name && value) {
+                    responseHeaders[name] = value;
+                }
+            });
+            
+            // Get custom response body
+            let responseBody = document.getElementById('customResponseBody')?.value || '';
+            try {
+                // Try to parse as JSON, but keep as string if it fails
+                responseBody = JSON.parse(responseBody);
+            } catch (e) {
+                // Leave as string if not valid JSON
             }
-        });
-        
-        // Get custom response body
-        let responseBody = document.getElementById('customResponseBody')?.value || '';
-        try {
-            // Try to parse as JSON, but keep as string if it fails
-            responseBody = JSON.parse(responseBody);
-        } catch (e) {
-            // Leave as string if not valid JSON
+            
+            customResponseData = {
+                statusCode,
+                headers: responseHeaders,
+                body: responseBody
+            };
         }
-        
-        customResponseData = {
-            statusCode,
-            headers: responseHeaders,
-            body: responseBody
-        };
     }
     
     // Make the request to forward the intercepted request
@@ -1410,7 +1689,6 @@ function forwardInterceptedRequest(requestId) {
             updateInterceptedRequestsUI();
             
             // Close the modal if it's open
-            const modal = document.getElementById('interceptModal');
             if (modal) modal.classList.remove('active');
         } else {
             console.error('Error forwarding request:', data.error);
@@ -1443,5 +1721,155 @@ function setupMockToggleHandlers() {
                 }, 500);
             }
         }
+    });
+}
+
+// Fetch intercept rules from the server
+function fetchInterceptRules() {
+    fetch('/intercept-rules')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                interceptRules = data.rules;
+                updateInterceptRulesUI();
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching intercept rules:', error);
+        });
+}
+
+// Add a new intercept rule
+function addInterceptRule(rule) {
+    fetch('/intercept-rules', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(rule)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Add the new rule to our list
+            interceptRules.push(data.rule);
+            // Update the UI
+            updateInterceptRulesUI();
+        } else {
+            console.error('Error adding intercept rule:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error adding intercept rule:', error);
+    });
+}
+
+// Update an existing intercept rule
+function updateInterceptRule(id, updates) {
+    fetch(`/intercept-rules/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updates)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the rule in our list
+            const index = interceptRules.findIndex(rule => rule.id === id);
+            if (index !== -1) {
+                interceptRules[index] = data.rule;
+            }
+            // Update the UI
+            updateInterceptRulesUI();
+        } else {
+            console.error('Error updating intercept rule:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating intercept rule:', error);
+    });
+}
+
+// Delete an intercept rule
+function deleteInterceptRule(id) {
+    fetch(`/intercept-rules/${id}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Remove the rule from our list
+            interceptRules = interceptRules.filter(rule => rule.id !== id);
+            // Update the UI
+            updateInterceptRulesUI();
+        } else {
+            console.error('Error deleting intercept rule:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting intercept rule:', error);
+    });
+}
+
+// Toggle intercept mode
+function toggleInterceptMode(enabled) {
+    console.log('Toggling intercept mode:', enabled);
+    
+    // Send request to server to update intercept mode
+    fetch('/update-intercept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Intercept mode updated:', data);
+            interceptEnabled = enabled;
+            
+            // Update UI
+            updateInterceptUI();
+            
+            // Update the mocks UI visual state
+            updateMocksUIVisualState(interceptEnabled);
+            
+            // Reset intercepted requests when disabled
+            if (!interceptEnabled) {
+                interceptedRequests = [];
+                updateInterceptedRequestsUI();
+            } else {
+                // If enabled, fetch any pending requests
+                fetch('/intercepted-requests')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.requests) {
+                            interceptedRequests = data.requests;
+                            updateInterceptedRequestsUI();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching intercepted requests:', error);
+                    });
+            }
+        } else {
+            console.error('Error updating intercept mode:', data.error);
+            // Revert toggle if there was an error
+            const interceptToggle = document.getElementById('interceptToggle');
+            if (interceptToggle) {
+                interceptToggle.checked = !enabled;
+            }
+            alert(`Error toggling intercept mode: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating intercept mode:', error);
+        // Revert toggle if there was an error
+        const interceptToggle = document.getElementById('interceptToggle');
+        if (interceptToggle) {
+            interceptToggle.checked = !enabled;
+        }
+        alert(`Error toggling intercept mode: ${error.message}`);
     });
 }

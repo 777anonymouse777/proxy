@@ -11,6 +11,7 @@ class InterceptQueue {
     this.pendingRequests = new Map();
     // logger is a function that accepts a log object and broadcasts it (e.g., to WebSocket clients)
     this.logger = logger;
+    console.log('InterceptQueue initialized with interception disabled');
   }
 
   /**
@@ -18,6 +19,7 @@ class InterceptQueue {
    * @returns {boolean} True if interception is enabled
    */
   isInterceptionEnabled() {
+    console.log('Checking interception status:', this.interceptEnabled);
     return this.interceptEnabled;
   }
 
@@ -28,6 +30,7 @@ class InterceptQueue {
   setInterceptionEnabled(enabled) {
     const wasEnabled = this.interceptEnabled;
     this.interceptEnabled = !!enabled;
+    console.log(`Intercept mode ${this.interceptEnabled ? 'enabled' : 'disabled'}`);
 
     // If intercept mode is being disabled and there were pending requests,
     // automatically forward all of them
@@ -51,16 +54,16 @@ class InterceptQueue {
     // Generate a unique ID for this interception
     const interceptId = uuidv4();
 
-    // Create a copy of the request data
+    // Create a clean copy of the request data without references to old data
     const requestData = {
       id: interceptId,
       timestamp: new Date().toISOString(),
       method: req.method,
       url: req.url,
       headers: { ...req.headers },
-      body: req.body,
-      query: req.query,
-      params: req.params,
+      body: JSON.parse(JSON.stringify(req.body || {})),
+      query: { ...req.query },
+      params: { ...req.params },
       // Store the original request and response objects
       _request: req,
       _response: res,
@@ -98,9 +101,9 @@ class InterceptQueue {
   getPendingRequests() {
     const requests = [];
     this.pendingRequests.forEach(request => {
-      // Create a copy without private properties
-      const { _response, _next, ...publicData } = request;
-      requests.push(publicData);
+      // Create a clean copy without private properties and references to old data
+      const { _request, _response, _next, ...publicData } = request;
+      requests.push({...publicData});
     });
     return requests;
   }
