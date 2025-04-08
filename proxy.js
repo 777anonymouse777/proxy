@@ -23,11 +23,60 @@ const app = express();
 const useHttps = process.env.USE_HTTPS === 'true';
 let server;
 
+// Update broadcastLog function to store logs in memory
+function broadcastLog(logData) {
+    if (!logData || typeof logData !== 'object') {
+        console.error('Invalid log data:', logData);
+        return;
+    }
+    
+    // Ensure timestamp exists
+    if (!logData.timestamp) {
+        logData.timestamp = new Date();
+    }
+    
+    // Sanitize log data to avoid circular references and non-serializable values
+    const sanitizedLogData = JSON.parse(JSON.stringify(logData));
+    
+    // Store log in memory (up to MAX_LOGS)
+    requestLogs.unshift(sanitizedLogData); // Add to the beginning
+    if (requestLogs.length > MAX_LOGS) {
+        requestLogs.pop(); // Remove oldest log
+    }
+    
+    // Convert to string if needed
+    const logMessage = JSON.stringify(sanitizedLogData);
+    
+    let activeClients = 0;
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            try {
+                client.send(logMessage);
+                activeClients++;
+            } catch (error) {
+                console.error('Error sending log to WebSocket client:', error);
+            }
+        }
+    });
+    
+    // Log to console if no clients are connected
+    if (activeClients === 0) {
+        const mockedStatus = sanitizedLogData.mocked ? ' [MOCKED]' : '';
+        const interceptedStatus = sanitizedLogData.interceptionId ? ' [INTERCEPTED]' : '';
+        console.log('Log (no WebSocket clients):', 
+            `${new Date(sanitizedLogData.timestamp).toLocaleTimeString()} ${sanitizedLogData.method} ${sanitizedLogData.url} ${sanitizedLogData.status}${mockedStatus}${interceptedStatus}`);
+    }
+}
+
+// Store logs in memory (limited to recent logs to avoid memory issues)
+const MAX_LOGS = 1000;
+let requestLogs = [];
+
 // Create instance of InterceptQueue for request interception
-const interceptQueue = new InterceptQueue();
+const interceptQueue = new InterceptQueue(broadcastLog);
 
 // Track if all requests should be intercepted
-let interceptAllRequests = true;
+let interceptAllRequests = false;
 
 // Create data directory if it doesn't exist
 const dataDir = path.join(__dirname, 'data');
@@ -669,10 +718,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Store logs in memory (limited to recent logs to avoid memory issues)
-const MAX_LOGS = 1000;
-let requestLogs = [];
-
 // Add a dedicated endpoint for fetching log details without logging 
 app.get('/log-details', (req, res) => {
     const { url, method } = req.query;
@@ -774,16 +819,17 @@ app.post('/update-intercept', (req, res) => {
 // Add endpoint to get intercepted requests
 app.get('/intercepted-requests', (req, res) => {
     try {
-        const requests = interceptQueue.getPendingRequests();
-        res.json({ 
-            success: true, 
-            requests 
+        const pendingRequests = interceptQueue.getPendingRequests();
+        console.log(`Returning ${pendingRequests.length} intercepted requests`);
+        res.json({
+            success: true,
+            requests: pendingRequests
         });
     } catch (error) {
-        console.error('Error getting intercepted requests:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
+        console.error('Error fetching intercepted requests:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
@@ -939,12 +985,16 @@ function setupProxyMiddleware() {
         // Check if intercept mode is enabled
         if (interceptQueue.isInterceptionEnabled()) {
             console.log(`Checking intercept rules for: ${req.method} ${req.url}`);
+            console.log(`Intercept All Requests setting: ${interceptAllRequests}`);
             
             // Load intercept rules
             let interceptRules = [];
             try {
                 if (fs.existsSync('./data/intercept-rules.json')) {
                     interceptRules = JSON.parse(fs.readFileSync('./data/intercept-rules.json', 'utf8'));
+                    console.log(`Loaded ${interceptRules.length} intercept rules`);
+                } else {
+                    console.log('No intercept rules file found');
                 }
             } catch (error) {
                 console.error('Error reading intercept rules:', error);
@@ -964,8 +1014,14 @@ function setupProxyMiddleware() {
                     const pathMatches = rule.path === req.path || 
                         (rule.path.endsWith('*') && req.path.startsWith(rule.path.slice(0, -1)));
                     
+                    if (pathMatches) {
+                        console.log(`Request matches rule: ${rule.method} ${rule.path}`);
+                    }
+                    
                     return pathMatches;
                 });
+            
+            console.log(`Should intercept request: ${shouldIntercept}`);
             
             if (shouldIntercept) {
                 console.log(`Intercepting request: ${req.method} ${req.url}`);
@@ -979,14 +1035,29 @@ function setupProxyMiddleware() {
                         method: req.method,
                         url: req.url,
                         headers: req.headers,
-                        body: req.body
+                        body: req.body,
+                        type: 'intercepted-request' // Add type to distinguish in the UI
                     };
+                    
+                    console.log(`Broadcasting intercepted request: ${req.method} ${req.url} with ID ${interceptId}`);
                     
                     // Broadcast the intercepted request to WebSocket clients
                     broadcastLog(interceptData);
                 });
             } else {
                 console.log(`Not intercepting request (no matching rule): ${req.method} ${req.url}`);
+                
+                // Mark this request as not intercepted
+                req._wasNotIntercepted = true;
+                
+                // Log non-intercepted requests immediately with initial "Processing" status
+                // This ensures they appear in the UI right away
+                broadcastLog({
+                    timestamp: new Date().toISOString(),
+                    method: req.method,
+                    url: req.url,
+                    status: 'Processing'  // This will be updated when response comes back
+                });
             }
             
             // If intercept mode is enabled but this request is not intercepted,
@@ -995,7 +1066,7 @@ function setupProxyMiddleware() {
             return;
         }
 
-        // Log the request regardless if it's mocked or actual
+        // Store information about this request for either mocked or actual requests
         const timestamp = new Date().toISOString();
         requestStats.total++;
         const method = req.method;
@@ -1126,14 +1197,19 @@ function setupProxyMiddleware() {
             const method = req.method;
             requestStats.methods[method] = (requestStats.methods[method] || 0) + 1;
 
-            const timestamp = new Date().toISOString();
-            const logData = {
-                timestamp,
-                method: req.method,
-                url: req.url,
-                userAgent: req.headers['user-agent']
-            };
-            broadcastLog(logData);
+            // Only log the request in onProxyReq if we're not in intercept mode,
+            // or if this is not a non-intercepted request in intercept mode
+            // This prevents duplicate logs for non-intercepted requests
+            if (!interceptQueue.isInterceptionEnabled() || !req._wasNotIntercepted) {
+                const timestamp = new Date().toISOString();
+                const logData = {
+                    timestamp,
+                    method: req.method,
+                    url: req.url,
+                    userAgent: req.headers['user-agent']
+                };
+                broadcastLog(logData);
+            }
         },
         onProxyRes: (proxyRes, req, res) => {
             console.log('Response received:', proxyRes.statusCode, req.url);
@@ -1193,6 +1269,13 @@ function setupProxyMiddleware() {
                     responseBody: parsedBody // Include the parsed response body
                 };
                 
+                // Special handling for non-intercepted requests during intercept mode
+                if (interceptQueue.isInterceptionEnabled() && req._wasNotIntercepted) {
+                    logData.tag = 'non-intercepted';
+                    // Ensure non-intercepted requests are always logged
+                    console.log(`Logging non-intercepted request response: ${req.method} ${req.url} ${proxyRes.statusCode}`);
+                }
+                
                 // Broadcast the log with response body
                 broadcastLog(logData);
             });
@@ -1239,50 +1322,6 @@ function setupProxyMiddleware() {
                 res.status(500).json({ error: error.message });
             }
         });
-    }
-}
-
-// Update broadcastLog function to store logs in memory
-function broadcastLog(logData) {
-    if (!logData || typeof logData !== 'object') {
-        console.error('Invalid log data:', logData);
-        return;
-    }
-    
-    // Ensure timestamp exists
-    if (!logData.timestamp) {
-        logData.timestamp = new Date();
-    }
-    
-    // Sanitize log data to avoid circular references and non-serializable values
-    const sanitizedLogData = JSON.parse(JSON.stringify(logData));
-    
-    // Store log in memory (up to MAX_LOGS)
-    requestLogs.unshift(sanitizedLogData); // Add to the beginning
-    if (requestLogs.length > MAX_LOGS) {
-        requestLogs.pop(); // Remove oldest log
-    }
-    
-    // Convert to string if needed
-    const logMessage = JSON.stringify(sanitizedLogData);
-    
-    let activeClients = 0;
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            try {
-                client.send(logMessage);
-                activeClients++;
-            } catch (error) {
-                console.error('Error sending log to WebSocket client:', error);
-            }
-        }
-    });
-    
-    // Log to console if no clients are connected
-    if (activeClients === 0) {
-        const mockedStatus = sanitizedLogData.mocked ? ' [MOCKED]' : '';
-        console.log('Log (no WebSocket clients):', 
-            `${new Date(sanitizedLogData.timestamp).toLocaleTimeString()} ${sanitizedLogData.method} ${sanitizedLogData.url} ${sanitizedLogData.status}${mockedStatus}`);
     }
 }
 
@@ -1390,16 +1429,16 @@ app.get('/download-logs/:filename', (req, res) => {
 // Add endpoint to check intercept status
 app.get('/intercept-status', (req, res) => {
     try {
-        const isInterceptEnabled = interceptQueue.isInterceptionEnabled();
-        console.log('Current intercept status:', isInterceptEnabled);
-        
+        const isEnabled = interceptQueue.isInterceptionEnabled();
+        console.log('Current intercept status:', isEnabled);
+        console.log('Current intercept all setting:', interceptAllRequests);
         res.json({
             success: true,
-            interceptEnabled: isInterceptEnabled,
+            interceptEnabled: isEnabled,
             interceptAllRequests: interceptAllRequests
         });
     } catch (error) {
-        console.error('Error getting intercept status:', error);
+        console.error('Error checking intercept status:', error);
         res.status(500).json({
             success: false,
             error: error.message

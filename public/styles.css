@@ -1547,16 +1547,34 @@ select:focus {
 
 /* New inline mocked indicator style */
 .log-entry .log-url .log-mocked-inline,
-.log-entry .log-url span.log-mocked-inline {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 4px;
+.log-entry .log-url .log-intercepted-inline,
+.log-entry .log-url .log-bypassed-inline,
+.log-entry .log-url .log-forwarded-inline {
+    padding: 2px 4px;
+    border-radius: 3px;
     font-size: 0.7rem;
     font-weight: bold;
-    background-color: #3498db; /* Blue color */
+    margin-left: 5px;
+}
+
+.log-mocked-inline {
+    background-color: #9575cd;
     color: white;
-    border-radius: 3px;
-    opacity: 0.9;
+}
+
+.log-intercepted-inline {
+    background-color: #ff9800;
+    color: white;
+}
+
+.log-bypassed-inline {
+    background-color: #2196F3;
+    color: white;
+}
+
+.log-forwarded-inline {
+    background-color: #4caf50;
+    color: white;
 }
 
 /* Override any existing styles */
@@ -1616,7 +1634,16 @@ select:focus {
 }
 
 .intercepted-requests {
+    margin-top: 20px;
     margin-bottom: 15px;
+}
+
+.intercepted-requests h3 {
+    color: var(--accent-color);
+    margin: 0 0 15px 0;
+    font-size: 1.3em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
 }
 
 .intercepted-request {
@@ -1879,12 +1906,13 @@ input:disabled + .toggle-switch:before {
     background-color: #ccc;
 }
 
-/* Make sure intercepted requests header matches other headers */
+/* Intercepted Requests Header */
 .intercepted-requests h3 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0 0 15px 0;
-  color: #333;
+    color: var(--accent-color);
+    margin-bottom: 15px;
+    font-size: 1.3em;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
 }
 
 /* Style the intercept modal to match other modals */
@@ -2486,4 +2514,27 @@ input:disabled + .toggle-switch:before {
     font-size: 0.9em;
     margin-top: 8px;
     margin-bottom: 0;
+}
+
+/* Intercepted tag for log entries */
+.log-intercepted-inline {
+    display: inline-block;
+    font-size: 0.75em;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background-color: #9C27B0;
+    color: white;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+.log-non-intercepted-inline {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 5px;
+    margin-left: 5px;
+    border-radius: 3px;
+    background-color: #673AB7;
+    color: white;
 }

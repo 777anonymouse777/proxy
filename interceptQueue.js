@@ -54,8 +54,11 @@ class InterceptQueue {
     // Generate a unique ID for this interception
     const interceptId = uuidv4();
 
+    console.log(`Intercepting request ${interceptId}: ${req.method} ${req.url}`);
+
     // Create a clean copy of the request data without references to old data
     const requestData = {
+      interceptionId: interceptId, // Use consistent property name with frontend
       id: interceptId,
       timestamp: new Date().toISOString(),
       method: req.method,
@@ -68,7 +71,8 @@ class InterceptQueue {
       _request: req,
       _response: res,
       _next: next,
-      _intercepted: true
+      _intercepted: true,
+      type: 'intercepted-request' // Add type to distinguish in logs/UI
     };
 
     // Store the request in the queue
@@ -76,13 +80,17 @@ class InterceptQueue {
 
     // Log the intercepted request with tag "intercepted"
     if (this.logger) {
-      this.logger({
+      const logData = {
         timestamp: new Date().toISOString(),
         method: req.method,
         url: req.url,
         status: 'INTERCEPTED',
-        tag: 'intercepted'
-      });
+        tag: 'intercepted',
+        interceptionId: interceptId,
+        type: 'intercepted-request'
+      };
+      console.log('Broadcasting intercepted request log:', logData);
+      this.logger(logData);
     }
 
     // Call the callback with the interception ID

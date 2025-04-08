@@ -134,16 +134,54 @@ function connectWebSocket() {
             const data = JSON.parse(event.data);
             
             // Check if this is an intercepted request
-            if (data.interceptionId) {
+            if (data.interceptionId || data.type === 'intercepted-request') {
+                console.log('Received intercepted request:', data.method, data.url, data.interceptionId);
                 handleInterceptedRequest(data);
-                return;
             }
             
-            // Store the complete log data using a unique key
+            // Log non-intercepted requests for debugging
+            if (data.tag === 'non-intercepted') {
+                console.log(`Received non-intercepted request: ${data.method} ${data.url}, status: ${data.status}`);
+            }
+            
+            // Create a unique key for this request 
             const logKey = `${data.method}:${data.url}:${data.timestamp}`;
+            
+            // Store the complete log data using a unique key
             logDataStore.set(logKey, data);
             
-            // Add log entry to the log container
+            // Only for non-intercepted requests or responses with real status codes,
+            // try to find and update an existing entry
+            if (data.tag === 'non-intercepted' && (typeof data.status === 'number' || data.status === 'BYPASSED')) {
+                // Look for existing log entry with this key or similar key
+                const existingLogElement = findExistingLogEntry(data);
+                
+                // If we found an existing log element, update it instead of creating new one
+                if (existingLogElement) {
+                    console.log(`Updating existing log entry for: ${data.method} ${data.url} with status: ${data.status}`);
+                    
+                    // Update the status in the existing log element
+                    const statusElement = existingLogElement.querySelector('.log-status');
+                    if (statusElement) {
+                        statusElement.textContent = data.status;
+                    }
+                    
+                    // Update the class based on status code
+                    if (typeof data.status === 'number' && data.status >= 400) {
+                        existingLogElement.className = 'log-entry error';
+                    } else {
+                        existingLogElement.className = 'log-entry success';
+                    }
+                    
+                    // Update the log key data attribute
+                    existingLogElement.dataset.logKey = logKey;
+                    
+                    // We've updated the existing entry, so don't create a new one
+                    return;
+                }
+            }
+            
+            // Add log entry to the log container (only for new entries or entries we couldn't update)
             const logContainer = document.getElementById('logContainer');
             if (logContainer) {
                 // Format timestamp
@@ -170,11 +208,23 @@ function connectWebSocket() {
                     // Use unique class name to avoid style conflicts
                     const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
                     
+                    // Add intercepted indicator if this is an intercepted request
+                    const interceptedText = (data.interceptionId || data.type === 'intercepted-request') ? 
+                        ' <span class="log-intercepted-inline">INTERCEPTED</span>' : '';
+                    
+                    // Add indicator for non-intercepted requests
+                    const bypassedText = (data.tag === 'non-intercepted') ?
+                        ' <span class="log-bypassed-inline">BYPASSED</span>' : '';
+                    
+                    // Add indicator for intercepted requests that were forwarded
+                    const forwardedText = (data.tag === 'forwarded') ?
+                        ' <span class="log-forwarded-inline">FORWARDED</span>' : '';
+                    
                     logEntry.innerHTML = `
                         <span class="log-time">${timeString}</span>
                         <span class="log-method">${data.method}</span>
-                        <span class="log-url">${data.url}${mockedText}</span>
-                        <span class="log-status">${data.status}</span>
+                        <span class="log-url">${data.url}${mockedText}${interceptedText}${bypassedText}${forwardedText}</span>
+                        <span class="log-status">${data.status || 'Pending'}</span>
                     `;
                 }
                 
@@ -207,6 +257,51 @@ function connectWebSocket() {
             console.error('Error processing WebSocket message:', error);
         }
     };
+}
+
+// Helper function to find existing log entry for a request
+function findExistingLogEntry(data) {
+    // Don't try to update entries for system messages or intercepted requests
+    if (data.method === 'SYSTEM' || data.interceptionId || data.type === 'intercepted-request') {
+        return null;
+    }
+    
+    // Check for a valid status - we only want to update entries when we have a numeric status code
+    if (typeof data.status !== 'number' && data.status !== 'BYPASSED') {
+        return null;
+    }
+    
+    console.log(`Looking for existing entry to update for: ${data.method} ${data.url}, status: ${data.status}`);
+    
+    // Get all log entries
+    const logEntries = document.querySelectorAll('.log-entry');
+    
+    // Try to match by URL parts to handle non-intercepted requests more reliably
+    for (const entry of logEntries) {
+        const methodEl = entry.querySelector('.log-method');
+        const urlEl = entry.querySelector('.log-url');
+        const statusEl = entry.querySelector('.log-status');
+        
+        if (!methodEl || !urlEl || !statusEl) continue;
+        
+        const methodText = methodEl.textContent.trim();
+        // Strip any tags from URL text to compare just the URL part
+        const urlText = urlEl.textContent.replace(/<[^>]*>/g, '').trim();
+        const statusText = statusEl.textContent.trim();
+        
+        // If method matches and URL contains our target URL 
+        // and status is "Processing" or "Pending", this is likely our entry
+        if (methodText === data.method && urlText.includes(data.url)) {
+            // Check if status indicates this is a pending entry
+            if (statusText === 'Processing' || statusText === 'Pending') {
+                console.log(`Found matching entry to update: ${methodText} ${urlText} with status: ${statusText}`);
+                return entry;
+            }
+        }
+    }
+    
+    console.log('No pending entry found to update');
+    return null;
 }
 
 // Setup target URL update functionality
@@ -985,15 +1080,31 @@ function updateInterceptRulesUI() {
     if (!container) return;
     
     if (interceptRules.length === 0) {
-        container.innerHTML = `
-            <div class="intercept-placeholder">
-                <p><strong>Intercept Mode:</strong> With no rules defined, ALL requests will be intercepted when enabled.</p>
-                <p>Add specific rules below if you want to intercept only certain requests.</p>
-            </div>
-            <div class="intercept-info">
-                <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
-            </div>
-        `;
+        // Check if "intercept all" is enabled
+        const interceptAllToggle = document.getElementById('interceptAllToggle');
+        const interceptAllEnabled = interceptAllToggle ? interceptAllToggle.checked : false;
+        
+        if (interceptAllEnabled) {
+            container.innerHTML = `
+                <div class="intercept-placeholder">
+                    <p><strong>Intercept Mode:</strong> "Intercept All Requests" is enabled. All requests will be intercepted.</p>
+                    <p>Add specific rules below if you want to intercept only certain requests.</p>
+                </div>
+                <div class="intercept-info">
+                    <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="intercept-placeholder">
+                    <p><strong>Intercept Mode:</strong> No rules are defined and "Intercept All" is disabled.</p>
+                    <p>No requests will be intercepted. Add rules below or enable "Intercept All".</p>
+                </div>
+                <div class="intercept-info">
+                    <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
+                </div>
+            `;
+        }
         
         // Add event listener for the "Add All Requests Rule" button
         setTimeout(() => {
@@ -1168,42 +1279,59 @@ function setupAddInterceptRule() {
     });
 }
 
-// Check current intercept status
+// Check intercept status from the server
 function checkInterceptStatus() {
     fetch('/intercept-status')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
                 interceptEnabled = data.interceptEnabled;
+                console.log('Intercept status from server:', interceptEnabled);
+                console.log('Intercept all setting from server:', data.interceptAllRequests);
+                
+                // Update UI based on current status
                 const interceptToggle = document.getElementById('interceptToggle');
                 if (interceptToggle) {
                     interceptToggle.checked = interceptEnabled;
                 }
                 
-                // Update intercept all toggle
+                // Update interceptAllToggle based on server setting
                 const interceptAllToggle = document.getElementById('interceptAllToggle');
                 if (interceptAllToggle && data.interceptAllRequests !== undefined) {
                     interceptAllToggle.checked = data.interceptAllRequests;
                 }
                 
-                updateInterceptUI();
-                
+                // Fetch any pending intercepted requests if intercept mode is enabled
                 if (interceptEnabled) {
-                    // If intercept is enabled, fetch any pending requests
-                    fetch('/intercepted-requests')
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success && data.requests) {
-                                interceptedRequests = data.requests;
-                                updateInterceptedRequestsUI();
-                            }
-                        })
-                        .catch(error => console.error('Error fetching intercepted requests:', error));
+                    fetchInterceptedRequests();
                 }
+                
+                updateInterceptUI();
+            } else {
+                console.error('Failed to get intercept status:', data.error);
             }
         })
         .catch(error => {
-            console.error('Error checking intercept status:', error);
+            console.error('Error fetching intercept status:', error);
+        });
+}
+
+// Fetch the current intercepted requests from the server
+function fetchInterceptedRequests() {
+    console.log('Fetching intercepted requests from server');
+    fetch('/intercepted-requests')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                interceptedRequests = data.requests || [];
+                console.log('Received intercepted requests:', interceptedRequests.length);
+                updateInterceptedRequestsUI();
+            } else {
+                console.error('Failed to fetch intercepted requests:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching intercepted requests:', error);
         });
 }
 
@@ -1342,30 +1470,37 @@ function toggleMocksUI(enabled) {
 }
 
 function updateInterceptUI() {
-    console.log('Updating intercept UI, interceptEnabled:', interceptEnabled);
+    console.log('Updating intercept UI, intercept enabled:', interceptEnabled);
     
-    const interceptCard = document.querySelector('.intercept-card');
+    // Check intercept all toggle
+    const interceptAllToggle = document.getElementById('interceptAllToggle');
+    const interceptAllEnabled = interceptAllToggle ? interceptAllToggle.checked : false;
+    console.log('Intercept all setting:', interceptAllEnabled);
+    
+    // Update the toggle state
     const interceptToggle = document.getElementById('interceptToggle');
-    const requestsSection = document.querySelector('.intercepted-requests');
-    
-    if (!interceptCard) return;
-    
-    // Update toggle state
     if (interceptToggle) {
         interceptToggle.checked = interceptEnabled;
     }
     
-    // Show/hide intercepted requests section
-    if (requestsSection) {
-        requestsSection.style.display = interceptEnabled ? 'block' : 'none';
+    // Update the intercepted requests area visibility
+    const interceptedRequestsArea = document.querySelector('.intercepted-requests');
+    if (interceptedRequestsArea) {
+        interceptedRequestsArea.style.display = interceptEnabled ? 'block' : 'none';
     }
     
-    // Add or remove "active" class to the card
-    if (interceptEnabled) {
-        interceptCard.classList.add('active');
-    } else {
-        interceptCard.classList.remove('active');
+    // Update the intercept card style
+    const interceptCard = document.querySelector('.intercept-card');
+    if (interceptCard) {
+        if (interceptEnabled) {
+            interceptCard.classList.add('active');
+        } else {
+            interceptCard.classList.remove('active');
+        }
     }
+    
+    // Update the intercept rules container
+    updateInterceptRulesUI();
     
     // Update the intercepted requests list
     if (interceptEnabled) {
@@ -1375,13 +1510,28 @@ function updateInterceptUI() {
 
 // Handle intercepted requests from WebSocket
 function handleInterceptedRequest(data) {
-    if (!data || !data.interceptionId) return;
+    if (!data || !data.interceptionId) {
+        console.error('Invalid intercepted request data:', data);
+        return;
+    }
     
-    // Add to intercepted requests
-    interceptedRequests.unshift(data);
+    console.log('Adding request to intercepted list:', data.method, data.url, data.interceptionId);
     
-    // Update UI
-    updateInterceptedRequestsUI();
+    // Check if this request is already in the list
+    const existingIndex = interceptedRequests.findIndex(req => req.interceptionId === data.interceptionId);
+    
+    if (existingIndex >= 0) {
+        // Update existing request
+        interceptedRequests[existingIndex] = data;
+    } else {
+        // Add to intercepted requests
+        interceptedRequests.unshift(data);
+    }
+    
+    // Update UI if intercept mode is enabled
+    if (interceptEnabled) {
+        updateInterceptedRequestsUI();
+    }
 }
 
 function updateInterceptedRequestsUI() {
