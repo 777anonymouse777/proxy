@@ -133,7 +133,7 @@ wss.on('connection', (ws) => {
 
 // Configuration
 const PORT = 3333;
-const HOST = process.env.HOST || "localhost";
+const HOST = "0.0.0.0";
 let API_SERVICE_URL = process.env.API_SERVICE_URL || "https://api.uat.aks1.io";
 
 // Remove trailing slash if present
