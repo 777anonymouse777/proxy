@@ -26,6 +26,9 @@ let server;
 // Create instance of InterceptQueue for request interception
 const interceptQueue = new InterceptQueue();
 
+// Track if all requests should be intercepted
+let interceptAllRequests = true;
+
 // Create data directory if it doesn't exist
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -919,6 +922,7 @@ function setupProxyMiddleware() {
             req.path === '/reset-stats' ||
             req.path === '/clear-cache' ||
             req.path === '/update-intercept' ||
+            req.path === '/update-intercept-all' ||
             req.path === '/intercepted-requests' ||
             req.path.startsWith('/forward-request/') ||
             req.path.startsWith('/dashboard') ||
@@ -946,9 +950,9 @@ function setupProxyMiddleware() {
                 console.error('Error reading intercept rules:', error);
             }
             
-            // If there are no rules or one rule matches, intercept the request
+            // If interceptAllRequests is true or a rule matches, intercept the request
             const shouldIntercept = 
-                interceptRules.length === 0 || // If no rules, intercept all
+                interceptAllRequests || // If intercept all is enabled
                 interceptRules.some(rule => {
                     // Skip disabled rules
                     if (!rule.enabled) return false;
@@ -984,6 +988,11 @@ function setupProxyMiddleware() {
             } else {
                 console.log(`Not intercepting request (no matching rule): ${req.method} ${req.url}`);
             }
+            
+            // If intercept mode is enabled but this request is not intercepted,
+            // still skip mocks and forward to the target API
+            next();
+            return;
         }
 
         // Log the request regardless if it's mocked or actual
@@ -1386,10 +1395,39 @@ app.get('/intercept-status', (req, res) => {
         
         res.json({
             success: true,
-            interceptEnabled: isInterceptEnabled
+            interceptEnabled: isInterceptEnabled,
+            interceptAllRequests: interceptAllRequests
         });
     } catch (error) {
         console.error('Error getting intercept status:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Add endpoint to update interceptAllRequests setting
+app.post('/update-intercept-all', (req, res) => {
+    try {
+        const { enabled } = req.body;
+        
+        if (enabled === undefined) {
+            return res.status(400).json({
+                success: false,
+                error: 'enabled parameter is required'
+            });
+        }
+        
+        interceptAllRequests = !!enabled;
+        console.log('Updated interceptAllRequests setting:', interceptAllRequests);
+        
+        res.json({
+            success: true,
+            interceptAllRequests: interceptAllRequests
+        });
+    } catch (error) {
+        console.error('Error updating interceptAllRequests:', error);
         res.status(500).json({
             success: false,
             error: error.message
