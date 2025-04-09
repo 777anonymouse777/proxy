@@ -152,7 +152,7 @@ function connectWebSocket() {
             
             // Only for non-intercepted requests or responses with real status codes,
             // try to find and update an existing entry
-            if (data.tag === 'non-intercepted' && (typeof data.status === 'number' || data.status === 'BYPASSED')) {
+            if (data.tag === 'non-intercepted' && data.status) {
                 // Look for existing log entry with this key or similar key
                 const existingLogElement = findExistingLogEntry(data);
                 
@@ -203,28 +203,15 @@ function connectWebSocket() {
                     `;
                 } else {
                     // Regular request logs with inline mocked indicator
-                    logEntry.className = `log-entry ${data.status >= 400 ? 'error' : 'success'}`;
+                    logEntry.className = 'log-entry';
                     
                     // Use unique class name to avoid style conflicts
                     const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
                     
-                    // Add intercepted indicator if this is an intercepted request
-                    const interceptedText = (data.interceptionId || data.type === 'intercepted-request') ? 
-                        ' <span class="log-intercepted-inline">INTERCEPTED</span>' : '';
-                    
-                    // Add indicator for non-intercepted requests
-                    const bypassedText = (data.tag === 'non-intercepted') ?
-                        ' <span class="log-bypassed-inline">BYPASSED</span>' : '';
-                    
-                    // Add indicator for intercepted requests that were forwarded
-                    const forwardedText = (data.tag === 'forwarded') ?
-                        ' <span class="log-forwarded-inline">FORWARDED</span>' : '';
-                    
                     logEntry.innerHTML = `
                         <span class="log-time">${timeString}</span>
                         <span class="log-method">${data.method}</span>
-                        <span class="log-url">${data.url}${mockedText}${interceptedText}${bypassedText}${forwardedText}</span>
-                        <span class="log-status">${data.status || 'Pending'}</span>
+                        <span class="log-url">${data.url}${mockedText}</span>
                     `;
                 }
                 
@@ -262,12 +249,14 @@ function connectWebSocket() {
 // Helper function to find existing log entry for a request
 function findExistingLogEntry(data) {
     // Don't try to update entries for system messages or intercepted requests
-    if (data.method === 'SYSTEM' || data.interceptionId || data.type === 'intercepted-request') {
+    if (data.method === 'SYSTEM' || 
+        data.interceptionId || 
+        data.type === 'intercepted-request') {
         return null;
     }
     
     // Check for a valid status - we only want to update entries when we have a numeric status code
-    if (typeof data.status !== 'number' && data.status !== 'BYPASSED') {
+    if (typeof data.status !== 'number') {
         return null;
     }
     
@@ -293,7 +282,7 @@ function findExistingLogEntry(data) {
         // and status is "Processing" or "Pending", this is likely our entry
         if (methodText === data.method && urlText.includes(data.url)) {
             // Check if status indicates this is a pending entry
-            if (statusText === 'Processing' || statusText === 'Pending') {
+            if (statusText === 'Processing' || statusText === 'Pending' || statusText === '') {
                 console.log(`Found matching entry to update: ${methodText} ${urlText} with status: ${statusText}`);
                 return entry;
             }
@@ -1560,6 +1549,7 @@ function updateInterceptedRequestsUI() {
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/>
                         </svg>
+                        Override
                     </button>
                     <button class="mock-action-btn forward-intercepted" data-id="${req.interceptionId}" title="Forward">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">

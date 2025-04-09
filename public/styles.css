@@ -1435,22 +1435,34 @@ select:focus {
 .mock-action-btn {
     background: none;
     border: none;
+    color: var(--accent-color);
     cursor: pointer;
-    color: var(--text-color);
-    opacity: 0.7;
-    transition: opacity 0.2s;
+    padding: 4px;
+    border-radius: 3px;
+    margin-left: 5px;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.2s;
 }
 
-.mock-action-btn:hover {
-    opacity: 1;
+.mock-action-btn svg {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
 }
 
-.mock-action-edit {
-    color: var(--highlight-color);
+.mock-action-btn.view-intercepted {
+    background-color: #f1f9ff;
+    color: #0077cc;
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
-.mock-action-delete {
-    color: var(--error-color);
+.mock-action-btn.forward-intercepted {
+    background-color: #f1fff1;
+    color: #00aa55;
+    padding: 4px 8px;
 }
 
 .text-area {

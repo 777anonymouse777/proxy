@@ -1050,13 +1050,13 @@ function setupProxyMiddleware() {
                 // Mark this request as not intercepted
                 req._wasNotIntercepted = true;
                 
-                // Log non-intercepted requests immediately with initial "Processing" status
-                // This ensures they appear in the UI right away
+                // Log non-intercepted requests immediately with tag but without status yet
+                // The status will be updated when the response comes back
                 broadcastLog({
                     timestamp: new Date().toISOString(),
                     method: req.method,
                     url: req.url,
-                    status: 'Processing'  // This will be updated when response comes back
+                    tag: 'non-intercepted'
                 });
             }
             
