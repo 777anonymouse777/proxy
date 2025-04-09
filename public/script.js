@@ -334,34 +334,21 @@ function setupTargetUrlUpdate() {
 
 // Handle clear logs button
 function setupClearLogs() {
-    const clearLogsBtn = document.getElementById('clearLogs');
-    if (!clearLogsBtn) return;
-    
-    clearLogsBtn.addEventListener('click', () => {
-        const logContainer = document.getElementById('logContainer');
-        if (logContainer) {
-            // Clear all logs
-            logContainer.innerHTML = '<div class="log-placeholder">No logs yet...</div>';
-        }
+    document.getElementById('clearLogs').addEventListener('click', () => {
+        document.getElementById('logContainer').innerHTML = '<div class="log-placeholder">No logs yet...</div>';
     });
 }
 
 // Setup log search functionality
 function setupLogSearch() {
     const searchInput = document.getElementById('searchInput');
-    if (!searchInput) return;
-    
-    searchInput.addEventListener('input', () => {
-        const searchTerm = searchInput.value.toLowerCase();
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
         const logEntries = document.querySelectorAll('.log-entry');
         
         logEntries.forEach(entry => {
-            const logText = entry.textContent.toLowerCase();
-            if (logText.includes(searchTerm)) {
-                entry.style.display = '';
-            } else {
-                entry.style.display = 'none';
-            }
+            const text = entry.textContent.toLowerCase();
+            entry.style.display = text.includes(searchTerm) ? 'flex' : 'none';
         });
     });
 }
@@ -389,35 +376,7 @@ function setupLogDetailsModal() {
 
 // Show log details in modal
 function showLogDetails(logData) {
-    const logDetailsModal = document.getElementById('logDetailsModal');
-    const detailTime = document.getElementById('logDetailTime');
-    const detailMethod = document.getElementById('logDetailMethod');
-    const detailUrl = document.getElementById('logDetailUrl');
-    const detailStatus = document.getElementById('logDetailStatus');
-    const detailBody = document.getElementById('logDetailBody');
-    
-    if (!logDetailsModal) return;
-    
-    // Fill in the log details
-    if (detailTime) detailTime.textContent = new Date(logData.timestamp).toLocaleString();
-    if (detailMethod) detailMethod.textContent = logData.method;
-    if (detailUrl) detailUrl.textContent = logData.url;
-    if (detailStatus) detailStatus.textContent = logData.status;
-    
-    // Display response body if available
-    if (detailBody) {
-        if (logData.method === 'SYSTEM') {
-            detailBody.textContent = 'No response body for system messages';
-        } else if (logData.responseBody) {
-            // Response body is already captured as text in the log
-            detailBody.textContent = logData.responseBody;
-        } else {
-            detailBody.textContent = 'Response body not available. You may need to restart the proxy server with the updated code.';
-        }
-    }
-    
-    // Show the modal
-    logDetailsModal.style.display = 'flex';
+    // Remove this entire function
 }
 
 // Initialize everything when the DOM is loaded
