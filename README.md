@@ -1,150 +1,99 @@
-# Advanced Proxy Server
+# Proxy Server User Manual
 
-An enhanced proxy server with authentication, caching, custom headers, and monitoring dashboard.
+## Quick Start
 
-## Features
+### Starting the Proxy Server
 
-- 🔒 **Authentication** - Dashboard and configuration protected with Basic Auth
-- 🔄 **Request Proxying** - Forward API requests to any target service
-- 📊 **Monitoring Dashboard** - Real-time request logs and statistics
-- 📝 **Custom Headers** - Add custom headers to proxied requests
-- 💾 **Response Caching** - Cache responses to improve performance
-- 🔐 **HTTPS Support** - Optional secure connections
-- ⚡ **Rate Limiting** - Protect against API abuse
-- 🚪 **Multiple Instances** - Run multiple proxy servers simultaneously
+1. Double-click the `start-proxy.command` file on your desktop
+   - This will automatically:
+     - Navigate to the proxy server directory
+     - Start the proxy server on port 3333
 
-## Installation
+2. The proxy server will be available at:
+   - Dashboard: `http://localhost:3333`
+   - API Endpoint: `http://localhost:3333/api`
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/proxy-server.git
-   cd proxy-server
-   ```
+### Client Configuration
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+For mobile app development (especially Android emulator):
+- Set your app's base URL to: `http://10.0.2.2:3333`
+  - `10.0.2.2` is the special IP address that points to your host machine from the Android emulator
+  - Port `3333` is the default proxy server port
 
-3. Create a `.env` file based on the provided example:
-   ```
-   cp .env.example .env
-   ```
+## Dashboard Features
 
-4. Edit the `.env` file to configure your proxy:
-   ```
-   # Proxy Configuration
-   PORT=3333
-   HOST=localhost
-   API_SERVICE_URL=https://api.example.com
+### 1. Server Configuration
+- **Target URL**: Set the API service you want to proxy
+- **Port**: Default is 3333
+- **Start Time**: Shows when the proxy server started
 
-   # Security
-   USE_HTTPS=false
-   ADMIN_USER=admin
-   ADMIN_PASSWORD=your-secure-password
+### 2. API Mocks
+- Create mock responses for specific endpoints
+- Configure HTTP methods, paths, and response bodies
+- Enable/disable mocks as needed
 
-   # Performance
-   ENABLE_CACHE=true
-   CACHE_DURATION=5 minutes
+### 3. Request Interception
+- Intercept and modify requests before they reach the target
+- View and edit request details
+- Forward or drop intercepted requests
 
-   # Custom Headers (JSON format)
-   CUSTOM_HEADERS={"X-Proxy-Version":"1.0.0"}
-   ```
+### 4. Request Logs
+- View all proxied requests in real-time
+- Search through request logs
+- Clear logs when needed
 
-5. For HTTPS support (optional):
-   - Set `USE_HTTPS=true` in your `.env` file
-   - Create an `ssl` directory in the project root
-   - Add your `key.pem` and `cert.pem` files to the `ssl` directory
+## Usage Guide
 
-## Usage
+### Basic Usage
+1. Start the proxy server using `start-proxy.command`
+2. Configure your target API URL in the dashboard
+3. Point your app to `http://10.0.2.2:3333`
+4. All requests will be proxied to your target API
 
-### Starting the proxy server
+### Creating Mocks
+1. Click "Add Mock" in the dashboard
+2. Configure:
+   - HTTP Method (GET, POST, PUT, etc.)
+   - Path (e.g., `/api/users`)
+   - Response Status Code
+   - Response Body (JSON)
+3. Enable the mock to start using it
 
-```
-npm start
-```
-
-For development with auto-restart:
-```
-npm run dev
-```
-
-### Accessing the dashboard
-
-Open your browser and navigate to:
-```
-http://localhost:3333
-```
-
-Default login credentials:
-- Username: admin
-- Password: admin123 (should be changed in .env for production)
-
-### Proxying requests
-
-Send requests through your proxy:
-```
-http://localhost:3333/api/your-endpoint
-```
-
-These will be forwarded to:
-```
-https://your-configured-api.com/your-endpoint
-```
-
-## Testing
-
-### Automated tests
-
-Run the test suite:
-```
-npm test
-```
-
-### Manual testing
-
-1. Start the proxy server:
-   ```
-   npm start
-   ```
-
-2. Test the proxy status endpoint:
-   ```
-   curl http://localhost:3333/info
-   ```
-
-3. Make a proxied request:
-   ```
-   curl http://localhost:3333/api/your-endpoint
-   ```
-
-4. Test request with authentication (for protected endpoints):
-   ```
-   curl -u admin:admin123 http://localhost:3333/update-target -X POST \
-        -H "Content-Type: application/json" \
-        -d '{"target": "https://newapi.example.com"}'
-   ```
-
-## Configuration Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| PORT | Port to run the proxy server on | 3333 |
-| HOST | Host to bind to | localhost |
-| API_SERVICE_URL | Target API to proxy requests to | https://api.uat.aks1.io |
-| USE_HTTPS | Enable HTTPS for the proxy server | false |
-| ADMIN_USER | Username for dashboard login | admin |
-| ADMIN_PASSWORD | Password for dashboard login | admin123 |
-| ENABLE_CACHE | Enable response caching | true |
-| CACHE_DURATION | How long to cache responses for | 5 minutes |
-| CUSTOM_HEADERS | JSON object with headers to add to proxied requests | {} |
+### Intercepting Requests
+1. Enable interception in the dashboard
+2. Send requests from your app
+3. View and modify intercepted requests
+4. Forward or drop requests as needed
 
 ## Troubleshooting
 
-- **Authentication issues**: Ensure the correct username/password is used from .env
-- **HTTPS errors**: Check that key.pem and cert.pem are valid and in the ssl directory
-- **Connection refused**: Verify your PORT isn't already in use by another service
+### Common Issues
+1. **Proxy not starting**
+   - Check if port 3333 is already in use
+   - Ensure you have Node.js installed
+   - Verify the `start-proxy.command` has execute permissions
 
-## License
+2. **Requests not reaching proxy**
+   - Verify your app is using the correct URL (`http://10.0.2.2:3333`)
+   - Check if the proxy server is running
+   - Ensure your emulator/device can reach the host machine
 
-MIT 
+3. **Mocks not working**
+   - Verify the mock is enabled
+   - Check if the path and method match your request
+   - Ensure the mock configuration is correct
+
+## Security
+
+- The dashboard is protected with basic authentication
+- Default credentials:
+  - Username: admin
+  - Password: admin123
+- Change these credentials in the `.env` file for production use
+
+## Support
+
+For issues or questions:
+1. Check the dashboard logs for error messages
+2. Verify your configuration in the `.env` file
+3. Ensure all required dependencies are installed 
