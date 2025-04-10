@@ -1585,10 +1585,6 @@ function showInterceptedRequestModal(id) {
                 </div>
                 
                 <div id="response-section">
-                    <h4>Response Headers</h4>
-                    <div id="responseHeadersContainer"></div>
-                    <button id="addResponseHeader" class="button button-small">Add Header</button>
-                    
                     <h4>Response Body</h4>
                     <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
                     
@@ -1615,9 +1611,6 @@ function showInterceptedRequestModal(id) {
     
     // Set up event listeners for the modal
     setupInterceptModalListeners(id);
-    
-    // Add a few empty response headers by default
-    addHeaderToContainer(document.getElementById('responseHeadersContainer'), 'Content-Type', 'application/json');
 }
 
 function setupTabs() {
@@ -1671,11 +1664,6 @@ function setupInterceptModalListeners(requestId) {
     // Add request header button
     document.getElementById('addRequestHeader').addEventListener('click', () => {
         addHeaderToContainer(document.getElementById('requestHeadersContainer'));
-    });
-    
-    // Add response header button
-    document.getElementById('addResponseHeader').addEventListener('click', () => {
-        addHeaderToContainer(document.getElementById('responseHeadersContainer'));
     });
     
     // Forward with changes button
@@ -1784,15 +1772,8 @@ function forwardInterceptedRequest(requestId) {
         if (useCustomResponse) {
             const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
             
-            // Get custom response headers
-            const responseHeaders = {};
-            document.querySelectorAll('#responseHeadersContainer .header-row').forEach(row => {
-                const name = row.querySelector('.header-name').value;
-                const value = row.querySelector('.header-value').value;
-                if (name && value) {
-                    responseHeaders[name] = value;
-                }
-            });
+            // Use empty headers object since we removed the response headers section
+            const responseHeaders = { 'Content-Type': 'application/json' };
             
             // Get custom response body
             let responseBody = document.getElementById('customResponseBody')?.value || '';
