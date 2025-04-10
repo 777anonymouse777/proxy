@@ -1587,14 +1587,6 @@ function showInterceptedRequestModal(id) {
                 <div id="response-section">
                     <h4>Response Body</h4>
                     <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
-                    
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input type="checkbox" id="useCustomResponse" checked>
-                            <span class="toggle-switch"></span>
-                            Override Response
-                        </label>
-                    </div>
                 </div>
                 
                 <div class="modal-buttons">
@@ -1767,29 +1759,27 @@ function forwardInterceptedRequest(requestId) {
     
     // Only use custom response if we're coming from the modal
     if (isFromModal) {
-        useCustomResponse = document.getElementById('useCustomResponse')?.checked || false;
+        useCustomResponse = true;
         
-        if (useCustomResponse) {
-            const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
-            
-            // Use empty headers object since we removed the response headers section
-            const responseHeaders = { 'Content-Type': 'application/json' };
-            
-            // Get custom response body
-            let responseBody = document.getElementById('customResponseBody')?.value || '';
-            try {
-                // Try to parse as JSON, but keep as string if it fails
-                responseBody = JSON.parse(responseBody);
-            } catch (e) {
-                // Leave as string if not valid JSON
-            }
-            
-            customResponseData = {
-                statusCode,
-                headers: responseHeaders,
-                body: responseBody
-            };
+        const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
+        
+        // Use empty headers object since we removed the response headers section
+        const responseHeaders = { 'Content-Type': 'application/json' };
+        
+        // Get custom response body
+        let responseBody = document.getElementById('customResponseBody')?.value || '';
+        try {
+            // Try to parse as JSON, but keep as string if it fails
+            responseBody = JSON.parse(responseBody);
+        } catch (e) {
+            // Leave as string if not valid JSON
         }
+        
+        customResponseData = {
+            statusCode,
+            headers: responseHeaders,
+            body: responseBody
+        };
     }
     
     // Make the request to forward the intercepted request
