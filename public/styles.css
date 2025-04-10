@@ -2554,3 +2554,12 @@ input:disabled + .toggle-switch:before {
     background-color: #673AB7;
     color: white;
 }
+
+#request-section, #response-section {
+    padding: 15px 0;
+}
+
+#response-section {
+    border-top: 1px solid var(--border-color);
+    margin-top: 15px;
+}

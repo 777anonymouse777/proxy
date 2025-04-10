@@ -1,16 +1,1 @@
-[
-  {
-    "id": "bd0a0bc2-abf7-4875-a90f-228b075b2052",
-    "method": "PUT",
-    "path": "/configs/v1",
-    "enabled": true,
-    "createdAt": "2025-04-08T03:03:26.073Z"
-  },
-  {
-    "id": "51136bc0-47d6-436c-b29a-30891c5312a4",
-    "method": "GET",
-    "path": "/hello/health/liveness",
-    "enabled": true,
-    "createdAt": "2025-04-08T03:03:52.484Z"
-  }
-]
+[]

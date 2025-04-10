@@ -1579,13 +1579,13 @@ function showInterceptedRequestModal(id) {
                     <span class="intercepted-url">${request.url}</span>
                 </div>
                 
-                <div class="tabs">
-                    <button class="tab-button active" data-tab="request-tab">Request</button>
-                    <button class="tab-button" data-tab="response-tab">Response</button>
+                <div class="form-group">
+                    <label for="customStatusCode">Status Code:</label>
+                    <input type="number" id="customStatusCode" class="text-input" value="200" />
                 </div>
                 
-                <div id="request-tab" class="tab-content active">
-                    <h4>Headers</h4>
+                <div id="request-section">
+                    <h4>Request Headers</h4>
                     <div id="requestHeadersContainer">
                         ${Object.entries(request.headers || {}).map(([name, value]) => 
                             `<div class="header-row">
@@ -1596,7 +1596,7 @@ function showInterceptedRequestModal(id) {
                     </div>
                     <button id="addRequestHeader" class="button button-small">Add Header</button>
                     
-                    <h4>Body</h4>
+                    <h4>Request Body</h4>
                     <textarea id="requestBody" class="text-area">${
                         typeof request.body === 'object' 
                             ? JSON.stringify(request.body, null, 2) 
@@ -1604,12 +1604,7 @@ function showInterceptedRequestModal(id) {
                     }</textarea>
                 </div>
                 
-                <div id="response-tab" class="tab-content">
-                    <div class="form-group">
-                        <label for="customStatusCode">Status Code:</label>
-                        <input type="number" id="customStatusCode" class="text-input" value="200" />
-                    </div>
-                    
+                <div id="response-section">
                     <h4>Response Headers</h4>
                     <div id="responseHeadersContainer"></div>
                     <button id="addResponseHeader" class="button button-small">Add Header</button>
@@ -1640,9 +1635,6 @@ function showInterceptedRequestModal(id) {
     
     // Set up event listeners for the modal
     setupInterceptModalListeners(id);
-    
-    // Initialize tabs
-    setupTabs();
     
     // Add a few empty response headers by default
     addHeaderToContainer(document.getElementById('responseHeadersContainer'), 'Content-Type', 'application/json');
