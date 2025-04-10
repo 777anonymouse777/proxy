@@ -1548,7 +1548,7 @@ function showInterceptedRequestModal(id) {
     // Populate the modal content
     modal.innerHTML = `
         <div class="modal-content">
-            <h3>Override Intercepted Request</h3>
+            <h3>Override Response</h3>
             <div class="modal-body">
                 <div class="form-group">
                     <label>Method:</label>
