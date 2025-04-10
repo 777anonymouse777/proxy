@@ -1038,9 +1038,6 @@ function updateInterceptRulesUI() {
                     <p><strong>Intercept Mode:</strong> "Intercept All Requests" is enabled. All requests will be intercepted.</p>
                     <p>Add specific rules below if you want to intercept only certain requests.</p>
                 </div>
-                <div class="intercept-info">
-                    <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
-                </div>
             `;
         } else {
             container.innerHTML = `
@@ -1048,25 +1045,8 @@ function updateInterceptRulesUI() {
                     <p><strong>Intercept Mode:</strong> No rules are defined and "Intercept All" is disabled.</p>
                     <p>No requests will be intercepted. Add rules below or enable "Intercept All".</p>
                 </div>
-                <div class="intercept-info">
-                    <button id="addAllRequestsRule" class="button button-outline">Add "Intercept All" Rule</button>
-                </div>
             `;
         }
-        
-        // Add event listener for the "Add All Requests Rule" button
-        setTimeout(() => {
-            const addAllButton = document.getElementById('addAllRequestsRule');
-            if (addAllButton) {
-                addAllButton.addEventListener('click', () => {
-                    addInterceptRule({
-                        method: 'ALL',
-                        path: '/*',
-                        enabled: true
-                    });
-                });
-            }
-        }, 0);
         
         return;
     }
