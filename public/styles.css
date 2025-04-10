@@ -1460,9 +1460,13 @@ select:focus {
 }
 
 .mock-action-btn.forward-intercepted {
-    background-color: #f1fff1;
-    color: #00aa55;
-    padding: 4px 8px;
+    background-color: #4caf50;
+    color: white;
+}
+
+.mock-action-btn.drop-intercepted {
+    background-color: #d9534f;
+    color: white;
 }
 
 .text-area {

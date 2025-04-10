@@ -883,6 +883,46 @@ app.post('/forward-request/:id', (req, res) => {
     }
 });
 
+// Add endpoint to drop intercepted request
+app.post('/drop-request/:id', (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Get the request from queue
+        const interceptedRequest = interceptQueue.getRequest(id);
+        
+        if (!interceptedRequest) {
+            return res.status(404).json({
+                success: false,
+                error: `Request with ID ${id} not found`
+            });
+        }
+        
+        // Drop the request
+        interceptQueue.dropRequest(id);
+        
+        // Log the dropped request
+        broadcastLog({
+            timestamp: new Date().toISOString(),
+            method: interceptedRequest.method,
+            url: interceptedRequest.url,
+            status: 'DROPPED',
+            tag: 'dropped'
+        });
+        
+        res.json({ 
+            success: true, 
+            message: `Request ${id} dropped` 
+        });
+    } catch (error) {
+        console.error('Error dropping request:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Add this to your proxy.js file where you handle request forwarding
 app.post('/forward-intercepted-request/:id', (req, res) => {
     const requestId = req.params.id;

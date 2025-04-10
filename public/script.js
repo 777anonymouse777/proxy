@@ -1515,6 +1515,12 @@ function updateInterceptedRequestsUI() {
                             <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/>
                         </svg>
                     </button>
+                    <button class="mock-action-btn drop-intercepted" data-id="${req.interceptionId}" title="Drop">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;
@@ -1534,6 +1540,13 @@ function updateInterceptedRequestsUI() {
         button.addEventListener('click', (e) => {
             const id = e.target.closest('.forward-intercepted').dataset.id;
             forwardInterceptedRequest(id);
+        });
+    });
+    
+    document.querySelectorAll('.drop-intercepted').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const id = e.target.closest('.drop-intercepted').dataset.id;
+            dropInterceptedRequest(id);
         });
     });
 }
@@ -1615,6 +1628,7 @@ function showInterceptedRequestModal(id) {
                 
                 <div class="modal-buttons">
                     <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
+                    <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
                     <button id="forwardWithChanges" class="button">Forward</button>
                 </div>
             </div>
@@ -1696,6 +1710,11 @@ function setupInterceptModalListeners(requestId) {
     document.getElementById('forwardWithChanges').addEventListener('click', () => {
         applyInterceptedChanges(requestId);
         forwardInterceptedRequest(requestId);
+    });
+    
+    // Drop request button
+    document.getElementById('dropRequestBtn').addEventListener('click', () => {
+        dropInterceptedRequest(requestId);
     });
 }
 
@@ -1849,6 +1868,41 @@ function forwardInterceptedRequest(requestId) {
     .catch(error => {
         console.error('Error forwarding request:', error);
         alert(`Error forwarding request: ${error.message}`);
+    });
+}
+
+function dropInterceptedRequest(requestId) {
+    if (!confirm('Are you sure you want to drop this request? This will return no response to the client and may cause errors.')) {
+        return;
+    }
+    
+    // Make the request to drop the intercepted request
+    fetch(`/drop-request/${requestId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Remove the request from our list
+            interceptedRequests = interceptedRequests.filter(
+                req => req.interceptionId !== requestId
+            );
+            updateInterceptedRequestsUI();
+            
+            // Close the modal if it's open
+            const modal = document.getElementById('interceptModal');
+            if (modal) modal.classList.remove('active');
+        } else {
+            console.error('Error dropping request:', data.error);
+            alert(`Error dropping request: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error dropping request:', error);
+        alert(`Error dropping request: ${error.message}`);
     });
 }
 
