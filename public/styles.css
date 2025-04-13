@@ -1180,7 +1180,8 @@ input[type="number"] {
     animation: fadeIn 0.3s ease;
 }
 
-.preview-status {
+/* Response override styles */
+.custom-status-code {
     font-family: 'Courier New', monospace;
     background-color: var(--secondary-color);
     padding: 4px 8px;
@@ -1188,7 +1189,8 @@ input[type="number"] {
     font-weight: bold;
 }
 
-.preview-headers {
+/* Custom response headers & body in override tab */
+.response-headers {
     background-color: var(--input-bg);
     padding: 10px;
     border-radius: 4px;
@@ -1198,18 +1200,18 @@ input[type="number"] {
     border: 1px solid var(--border-color);
 }
 
-.preview-headers div {
+.response-headers div {
     padding: 5px 0;
     border-bottom: 1px solid rgba(52, 73, 94, 0.3);
     font-family: 'Courier New', monospace;
     font-size: 0.9em;
 }
 
-.preview-headers div:last-child {
+.response-headers div:last-child {
     border-bottom: none;
 }
 
-.preview-body {
+.response-body {
     background-color: var(--input-bg);
     padding: 15px;
     border-radius: 4px;
@@ -1548,4 +1550,42 @@ input[type="number"] {
     margin-left: 10px;
     color: var(--secondary-text-color);
     font-size: 0.85em;
+}
+
+/* Mocked tag styling */
+.mocked-tag {
+    background-color: #9c27b0;
+    color: white;
+    font-size: 0.7em;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 8px;
+    font-weight: bold;
+    text-transform: uppercase;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    animation: fadeIn 0.3s ease;
+}
+
+/* Mocked tag in details view */
+.log-details-header .mocked-tag {
+    font-size: 0.8em;
+    padding: 3px 8px;
+    margin: 0 8px;
+    background-color: #9c27b0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.log-mocked-inline {
+    background-color: #9c27b0;
+    color: white;
+    font-size: 0.7em;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-left: 5px;
+    font-weight: bold;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }

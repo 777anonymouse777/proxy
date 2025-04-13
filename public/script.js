@@ -1700,11 +1700,11 @@ function showInterceptedRequestModal(id) {
     // Show loading state
     modal.innerHTML = `
         <div class="modal-content">
-            <h3>Override Request/Response</h3>
+            <h3>Override Response</h3>
             <div class="modal-body">
                 <div style="text-align: center; padding: 20px;">
                     <div class="spinner"></div>
-                    <p>Loading response preview...</p>
+                    <p>Loading response data...</p>
                 </div>
             </div>
         </div>
@@ -1713,14 +1713,14 @@ function showInterceptedRequestModal(id) {
     // Show the modal immediately with loading state
     modal.classList.add('active');
 
-    // Fetch response preview
+    // Fetch response data to populate the override tab
     fetch(`/preview-response/${id}`)
         .then(response => response.json())
         .then(data => {
-            console.log('Response preview data:', data);
+            console.log('Response data:', data);
             
             if (!data.success) {
-                throw new Error(data.error || 'Failed to fetch response preview');
+                throw new Error(data.error || 'Failed to fetch response data');
             }
             
             const preview = data.preview;
@@ -1728,89 +1728,41 @@ function showInterceptedRequestModal(id) {
             // Populate the modal content with preview data
             modal.innerHTML = `
                 <div class="modal-content">
-                    <h3>Override Request/Response</h3>
+                    <h3>Override Response</h3>
                     <div class="modal-body">
-                        <div class="tabs">
-                            <div class="tab-buttons">
-                                <button class="tab-button active" data-tab="request-tab">Request</button>
-                                <button class="tab-button" data-tab="response-tab">Response Preview</button>
-                                <button class="tab-button" data-tab="override-tab">Override Response</button>
-                            </div>
-                            
-                            <div class="tab-content active" id="request-tab">
-                                <div class="form-group">
-                                    <label>Method:</label>
-                                    <span class="intercepted-method">${request.method}</span>
-                                </div>
-                                <div class="form-group">
-                                    <label>URL:</label>
-                                    <span class="intercepted-url">${request.url}</span>
-                                </div>
-                                
-                                <h4>Request Headers</h4>
-                                <div id="requestHeadersContainer">
-                                    ${Object.entries(request.headers || {}).map(([name, value]) => 
-                                        `<div class="header-row">
-                                            <input type="text" class="header-name" value="${name}" readonly />
-                                            <input type="text" class="header-value" value="${value}" />
-                                        </div>`
-                                    ).join('')}
-                                </div>
-                                <button id="addRequestHeader" class="button button-small">Add Header</button>
-                                
-                                <h4>Request Body</h4>
-                                <textarea id="requestBody" class="text-area">${
-                                    typeof request.body === 'object' 
-                                        ? JSON.stringify(request.body, null, 2) 
-                                        : request.body || ''
-                                }</textarea>
-                            </div>
-                            
-                            <div class="tab-content" id="response-tab">
-                                <div class="form-group">
-                                    <label>Status Code:</label>
-                                    <span class="preview-status">${preview.status} ${preview.statusText || ''}</span>
-                                </div>
-                                
-                                <h4>Response Headers</h4>
-                                <div class="preview-headers">
-                                    ${Object.entries(preview.headers || {}).map(([name, value]) => 
-                                        `<div><strong>${name}:</strong> ${value}</div>`
-                                    ).join('')}
-                                </div>
-                                
-                                <h4>Response Body</h4>
-                                <pre class="preview-body">${preview.body || '(Empty response body)'}</pre>
-                            </div>
-                            
-                            <div class="tab-content" id="override-tab">
-                                <div class="form-group">
-                                    <label for="customStatusCode">Status Code:</label>
-                                    <input type="number" id="customStatusCode" class="text-input" value="${preview.status || 200}" />
-                                </div>
-                                
-                                <h4>Custom Response Headers</h4>
-                                <div id="responseHeadersContainer">
-                                    ${Object.entries(preview.headers || {}).slice(0, 5).map(([name, value]) => 
-                                        `<div class="header-row">
-                                            <input type="text" class="header-name" value="${name}" />
-                                            <input type="text" class="header-value" value="${value}" />
-                                            <button class="remove-header">×</button>
-                                        </div>`
-                                    ).join('')}
-                                </div>
-                                <button id="addResponseHeader" class="button button-small">Add Header</button>
-                                
-                                <h4>Custom Response Body</h4>
-                                <textarea id="customResponseBody" class="text-area">${preview.body || ''}</textarea>
-                            </div>
+                        <div class="form-group">
+                            <label>Method:</label>
+                            <span class="intercepted-method">${request.method}</span>
                         </div>
+                        <div class="form-group">
+                            <label>URL:</label>
+                            <span class="intercepted-url">${request.url}</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="customStatusCode">Status Code:</label>
+                            <input type="number" id="customStatusCode" class="text-input" value="${preview.status || 200}" />
+                        </div>
+                        
+                        <h4>Custom Response Headers</h4>
+                        <div id="responseHeadersContainer">
+                            ${Object.entries(preview.headers || {}).slice(0, 5).map(([name, value]) => 
+                                `<div class="header-row">
+                                    <input type="text" class="header-name" value="${name}" />
+                                    <input type="text" class="header-value" value="${value}" />
+                                    <button class="remove-header">×</button>
+                                </div>`
+                            ).join('')}
+                        </div>
+                        <button id="addResponseHeader" class="button button-small">Add Header</button>
+                        
+                        <h4>Custom Response Body</h4>
+                        <textarea id="customResponseBody" class="text-area">${preview.body || ''}</textarea>
                         
                         <div class="modal-buttons">
                             <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
                             <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
-                            <button id="forwardOriginal" class="button button-secondary">Forward Original</button>
-                            <button id="forwardWithChanges" class="button">Forward with Changes</button>
+                            <button id="forwardWithChanges" class="button" title="Forward the request with or without your changes">Forward Response</button>
                         </div>
                     </div>
                 </div>
@@ -1818,16 +1770,10 @@ function showInterceptedRequestModal(id) {
 
             // Set up event listeners for the modal
             setupInterceptModalListeners(id);
-            setupTabs();
             
             // Set up response headers container
             document.getElementById('addResponseHeader').addEventListener('click', () => {
                 addHeaderToContainer(document.getElementById('responseHeadersContainer'));
-            });
-            
-            // Forward original button (no changes)
-            document.getElementById('forwardOriginal').addEventListener('click', () => {
-                forwardInterceptedRequest(id);
             });
             
             // Drop request button
@@ -1842,10 +1788,10 @@ function showInterceptedRequestModal(id) {
             // Show error state in modal
             modal.innerHTML = `
                 <div class="modal-content">
-                    <h3>Override Request/Response</h3>
+                    <h3>Override Response</h3>
                     <div class="modal-body">
                         <div class="alert alert-error">
-                            Failed to fetch response preview: ${error.message}
+                            Failed to fetch response data: ${error.message}
                         </div>
                         
                         <div class="form-group">
@@ -1862,12 +1808,16 @@ function showInterceptedRequestModal(id) {
                             <input type="number" id="customStatusCode" class="text-input" value="200" />
                         </div>
                         
-                        <h4>Request Body</h4>
-                        <textarea id="requestBody" class="text-area" readonly>${
-                            typeof request.body === 'object' 
-                                ? JSON.stringify(request.body, null, 2) 
-                                : request.body || ''
-                        }</textarea>
+                        <h4>Custom Response Headers</h4>
+                        <div id="responseHeadersContainer">
+                            <!-- Default headers in case of error -->
+                            <div class="header-row">
+                                <input type="text" class="header-name" value="Content-Type" />
+                                <input type="text" class="header-value" value="application/json" />
+                                <button class="remove-header">×</button>
+                            </div>
+                        </div>
+                        <button id="addResponseHeader" class="button button-small">Add Header</button>
                         
                         <h4>Custom Response Body</h4>
                         <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
@@ -1875,7 +1825,7 @@ function showInterceptedRequestModal(id) {
                         <div class="modal-buttons">
                             <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
                             <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
-                            <button id="forwardWithChanges" class="button">Forward with Changes</button>
+                            <button id="forwardWithChanges" class="button" title="Forward the request with or without your changes">Forward Response</button>
                         </div>
                     </div>
                 </div>
@@ -1883,6 +1833,17 @@ function showInterceptedRequestModal(id) {
             
             // Set up event listeners for the error state
             setupInterceptModalListeners(id);
+            
+            // Set up response headers container
+            document.getElementById('addResponseHeader').addEventListener('click', () => {
+                addHeaderToContainer(document.getElementById('responseHeadersContainer'));
+            });
+            
+            // Drop request button
+            document.getElementById('dropRequestBtn').addEventListener('click', () => {
+                dropInterceptedRequest(id);
+                document.getElementById('interceptModal').classList.remove('active');
+            });
         });
 }
 
@@ -1934,12 +1895,12 @@ function setupInterceptModalListeners(requestId) {
     
     window.addEventListener('click', closeOnOutsideClick);
     
-    // Add request header button
-    document.getElementById('addRequestHeader').addEventListener('click', () => {
-        addHeaderToContainer(document.getElementById('requestHeadersContainer'));
+    // Add response header button
+    document.getElementById('addResponseHeader').addEventListener('click', () => {
+        addHeaderToContainer(document.getElementById('responseHeadersContainer'));
     });
     
-    // Forward with changes button
+    // Forward response button - works whether changes were made or not
     document.getElementById('forwardWithChanges').addEventListener('click', () => {
         applyInterceptedChanges(requestId);
         forwardInterceptedRequest(requestId);
@@ -1958,18 +1919,15 @@ function applyInterceptedChanges(requestId) {
         return;
     }
     
-    // Check which tab is active to determine if we're modifying the request or overriding the response
-    const responseTabActive = document.querySelector('#override-tab.active') !== null;
-    
-    // Get status code from the override tab
+    // Get status code
     const statusCodeInput = document.getElementById('customStatusCode');
     const statusCode = statusCodeInput ? parseInt(statusCodeInput.value, 10) : 200;
     
-    // Get response body from the override tab
+    // Get response body
     const responseBodyInput = document.getElementById('customResponseBody');
     const responseBody = responseBodyInput ? responseBodyInput.value.trim() : '';
     
-    // Get response headers from the override tab
+    // Get response headers
     const responseHeadersContainer = document.getElementById('responseHeadersContainer');
     const responseHeaders = {};
     
@@ -1985,59 +1943,7 @@ function applyInterceptedChanges(requestId) {
         });
     }
     
-    // Get updated request values (only if needed)
-    if (!responseTabActive) {
-        // Update request body if in the request tab
-        const requestBodyInput = document.getElementById('requestBody');
-        if (requestBodyInput) {
-            try {
-                const bodyValue = requestBodyInput.value.trim();
-                // Try to parse as JSON to ensure it's valid
-                try {
-                    JSON.parse(bodyValue);
-                    // Valid JSON, use as is
-                } catch (e) {
-                    // Not valid JSON, but that might be ok for some content types
-                    console.log('Request body is not valid JSON, using as raw text');
-                }
-                
-                // Update request body (could be JSON string or raw text)
-                request.body = bodyValue;
-                
-            } catch (error) {
-                console.error('Error updating request body:', error);
-            }
-        }
-        
-        // Update request headers
-        const requestHeadersContainer = document.getElementById('requestHeadersContainer');
-        if (requestHeadersContainer) {
-            const headerRows = requestHeadersContainer.querySelectorAll('.header-row');
-            const headers = {...request.headers}; // Clone existing headers
-            
-            // Clear non-internal headers
-            for (const key of Object.keys(headers)) {
-                if (!key.startsWith('_')) {
-                    delete headers[key];
-                }
-            }
-            
-            // Add updated headers
-            headerRows.forEach(row => {
-                const nameInput = row.querySelector('.header-name');
-                const valueInput = row.querySelector('.header-value');
-                
-                if (nameInput && valueInput && nameInput.value.trim()) {
-                    headers[nameInput.value.trim()] = valueInput.value;
-                }
-            });
-            
-            // Update request headers
-            request.headers = headers;
-        }
-    }
-    
-    // Create custom response object if we're overriding the response
+    // Create custom response object
     const customResponse = {
         statusCode: statusCode,
         body: responseBody,
@@ -2049,9 +1955,7 @@ function applyInterceptedChanges(requestId) {
     
     console.log('Applied intercepted changes:', {
         requestId,
-        requestBody: request.body,
-        customResponse,
-        responseTabActive
+        customResponse
     });
     
     // Update the request in the interceptedRequests array
@@ -2075,15 +1979,15 @@ function forwardInterceptedRequest(requestId) {
         modal.classList.remove('active');
     }
     
-    console.log('Forwarding request with ID:', requestId);
-    
     // Determine if we should use custom response
     let customResponseData = null;
+    let isCustomized = false;
     
     // Use custom response if it was defined in the request object
     if (request.customResponse) {
         console.log('Using custom response:', request.customResponse);
         customResponseData = request.customResponse;
+        isCustomized = true;
         
         // If response body is a string but looks like JSON, try to parse it
         if (typeof customResponseData.body === 'string' && 
@@ -2107,6 +2011,8 @@ function forwardInterceptedRequest(requestId) {
         }
     }
     
+    console.log(`Forwarding request with ID: ${requestId}, customized: ${isCustomized}`);
+    
     // Make the request to forward the intercepted request
     fetch(`/forward-intercepted-request/${requestId}`, {
         method: 'POST',
@@ -2121,6 +2027,23 @@ function forwardInterceptedRequest(requestId) {
     .then(data => {
         if (data.success) {
             console.log('Successfully forwarded request:', requestId);
+            
+            // Display a success message
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success';
+            alertDiv.textContent = isCustomized ? 
+                'Request forwarded with custom response.' : 
+                'Request forwarded with original response.';
+            
+            // Add to the top of the page temporarily
+            const container = document.querySelector('.container');
+            if (container && container.firstChild) {
+                container.insertBefore(alertDiv, container.firstChild);
+                // Remove after 3 seconds
+                setTimeout(() => {
+                    alertDiv.remove();
+                }, 3000);
+            }
             
             // Remove the request from our list
             interceptedRequests = interceptedRequests.filter(
@@ -2380,6 +2303,16 @@ function handleLogClick(logEntry) {
     
     header.appendChild(methodSpan);
     header.appendChild(urlSpan);
+    
+    // Add mocked tag if this response was mocked
+    if (logEntry.mocked) {
+        const mockedTag = document.createElement('span');
+        mockedTag.className = 'mocked-tag';
+        mockedTag.textContent = 'MOCKED';
+        mockedTag.title = 'This response was served from a mock';
+        header.appendChild(mockedTag);
+    }
+    
     header.appendChild(statusSpan);
     
     // Timestamps
@@ -2601,6 +2534,15 @@ function renderLog(logEntry) {
         url.textContent = logEntry.url;
     }
     logItem.appendChild(url);
+    
+    // Add "MOCKED" tag if this is a mocked response
+    if (logEntry.mocked) {
+        const mockedTag = document.createElement('span');
+        mockedTag.className = 'mocked-tag';
+        mockedTag.textContent = 'MOCKED';
+        mockedTag.title = 'This response was served from a mock';
+        logItem.appendChild(mockedTag);
+    }
     
     // Status code if available
     if (logEntry.status) {
