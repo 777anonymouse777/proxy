@@ -1395,11 +1395,13 @@ select:focus {
 .mock-item {
     display: flex;
     align-items: center;
-    background-color: var(--card-bg);
+    background-color: #1a1a1a;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 10px;
     position: relative;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+    gap: 5px; /* Add gap between wrapped elements */
 }
 
 .mock-item.disabled {
@@ -1407,16 +1409,22 @@ select:focus {
 }
 
 .mock-details {
-    flex-grow: 1;
+    flex: 1 1 65%; /* Take up 65% of space but allow shrinking */
     display: flex;
     align-items: center;
     gap: 10px;
+    min-width: 0; /* Enable text truncation in children */
+    overflow: hidden; /* Contain overflowing content */
 }
 
 .mock-path {
     font-weight: bold;
-    color: var(--highlight-color);
+    color: #ffffff;
     flex-grow: 1;
+    white-space: nowrap; /* Keep on single line */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Add ellipsis for overflowing text */
+    min-width: 0; /* Required for ellipsis to work */
 }
 
 .mock-status {
@@ -1429,7 +1437,9 @@ select:focus {
 
 .mock-actions {
     display: flex;
-    gap: 10px;
+    gap: 5px; /* Reduce gap to save space */
+    flex: 0 0 auto; /* Don't grow or shrink */
+    flex-wrap: nowrap; /* Prevent buttons from wrapping */
 }
 
 .mock-action-btn {
@@ -1439,23 +1449,24 @@ select:focus {
     cursor: pointer;
     padding: 4px;
     border-radius: 3px;
-    margin-left: 5px;
+    margin-left: 0; /* Remove left margin */
     display: flex;
     align-items: center;
     transition: background-color 0.2s;
+    white-space: nowrap; /* Prevent button text wrapping */
 }
 
 .mock-action-btn svg {
     width: 14px;
     height: 14px;
-    margin-right: 4px;
+    margin-right: 2px; /* Reduce right margin */
 }
 
 .mock-action-btn.view-intercepted {
     background-color: #f1f9ff;
     color: #0077cc;
-    padding: 4px 8px;
-    font-size: 12px;
+    padding: 4px 6px; /* Reduce horizontal padding */
+    font-size: 11px; /* Slightly reduce font size */
     white-space: nowrap;
 }
 
@@ -1666,17 +1677,22 @@ select:focus {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px; /* Further reduced from 8px */
-    background-color: #f5f5f5;
+    padding: 6px;
+    background-color: #1a1a1a;
     border-radius: 4px;
-    margin-bottom: 4px; /* Further reduced from 6px */
+    margin-bottom: 4px;
     border-left: 4px solid #2196F3;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+    gap: 5px;
 }
 
 .intercepted-request-info {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 1 1 65%; /* Take 65% but allow shrinking */
+    min-width: 0; /* Enable text truncation */
+    overflow: hidden;
 }
 
 .intercepted-method {
@@ -1688,11 +1704,13 @@ select:focus {
 }
 
 .intercepted-url {
-    color: #333;
-    flex-grow: 1;
+    color: #ffffff;
+    flex: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0; /* Enable text truncation */
+    max-width: 100%; /* Ensure it doesn't overflow its container */
 }
 
 .intercepted-status {
@@ -1705,783 +1723,53 @@ select:focus {
 
 .intercepted-actions {
     display: flex;
-    gap: 8px;
-}
-
-.breakpoints-container {
-    margin-top: 6px; /* Further reduced from 10px */
-}
-
-.breakpoints-container h3 {
-    font-size: 15px;
-    margin: 0 0 5px 0;
-}
-
-.breakpoint-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px; /* Further reduced from 8px */
-    background-color: #f5f5f5;
-    border-radius: 4px;
-    margin-bottom: 4px; /* Further reduced from 6px */
-}
-
-.breakpoint-details {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.breakpoint-direction {
-    font-weight: bold;
-    background-color: #9C27B0;
-    color: white;
-    padding: 3px 8px;
-    border-radius: 3px;
-}
-
-.breakpoint-method {
-    font-weight: bold;
-    background-color: #673AB7;
-    color: white;
-    padding: 3px 8px;
-    border-radius: 3px;
-}
-
-.breakpoint-url {
-    color: #333;
-}
-
-.breakpoint-status {
-    font-weight: bold;
-    padding: 3px 8px;
-    border-radius: 3px;
-    background-color: #FF9800;
-    color: white;
-}
-
-.breakpoint-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.breakpoints-placeholder {
-    text-align: center;
-    color: #888;
-    padding: 15px;
-}
-
-/* Mocks Click Blocker Overlay */
-.mocks-click-blocker {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: transparent;
-    z-index: 1000;
-    cursor: not-allowed;
-}
-
-/* Disabled Mocks - only when intercept mode is on */
-.mocks-card.disabled {
-    opacity: 0.7;
-    position: relative; /* For absolute positioning of the overlay */
-}
-
-.mocks-disabled-message {
-    background-color: #ffecb3;
-    color: #ff6f00;
-    padding: 10px 15px;
-    border-radius: 4px;
-    margin-bottom: 15px;
-    text-align: center;
-    font-weight: bold;
-    border-left: 4px solid #ff6f00;
-    z-index: 10; /* Ensure it's above other content but below the click blocker */
-}
-
-/* Fix for squished toggles */
-.intercept-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px; /* Maintain proper spacing between controls */
-    flex-wrap: wrap; /* Allow wrapping if needed */
-}
-
-/* More compact header */
-.compact-header {
-    padding: 10px 15px; /* Reduce header padding */
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.compact-header h2 {
-    margin: 0;
-    font-size: 18px; /* Slightly smaller heading */
-}
-
-/* More compact toggle labels */
-.intercept-controls .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin: 0;
-    white-space: nowrap;
-}
-
-/* More compact button */
-.compact-button {
-    padding: 6px 10px;
-    font-size: 13px;
-}
-
-/* More compact container */
-.intercept-container {
-    padding: 5px; /* Further reduced from 8px */
-    max-height: 200px; /* Further reduced height */
-    overflow-y: auto;
-}
-
-/* Ultra-compact placeholder */
-.intercept-placeholder {
-    text-align: center;
-    color: #888;
-    padding: 8px; /* Further reduced from 12px */
-    font-size: 14px;
-}
-
-/* Compact headings */
-.compact-h3 {
-    font-size: 15px;
-    margin: 0 0 5px 0;
-}
-
-/* More compact intercepted requests */
-.intercepted-request {
-    padding: 6px; /* Further reduced from 8px */
-    margin-bottom: 4px; /* Further reduced from 6px */
-}
-
-/* Further reduce breakpoints section spacing */
-.breakpoints-container {
-    margin-top: 6px; /* Further reduced from 10px */
-}
-
-.breakpoint-item {
-    padding: 6px; /* Further reduced from 8px */
-    margin-bottom: 4px; /* Further reduced from 6px */
-}
-
-/* Ensure toggle switches are properly sized */
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 24px;
-    background-color: #455a64;
-    border-radius: 34px;
-    transition: .4s;
-}
-
-.toggle-switch:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    border-radius: 50%;
-    transition: .4s;
-}
-
-/* Active toggle - properly colored blue when ON */
-input:checked + .toggle-switch {
-    background-color: #4fc3f7;
-}
-
-input:checked + .toggle-switch:before {
-    transform: translateX(26px);
-}
-
-/* When toggle is disabled (but still on) */
-input:checked:disabled + .toggle-switch {
-    background-color: #78909c;
-    opacity: 0.7;
-}
-
-input:disabled + .toggle-switch {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-input:disabled + .toggle-switch:before {
-    background-color: #ccc;
-}
-
-/* Intercepted Requests Header */
-.intercepted-requests h3 {
-    color: var(--accent-color);
-    margin-bottom: 15px;
-    font-size: 1.3em;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 10px;
-}
-
-/* Style the intercept modal to match other modals */
-#interceptModal .modal-content {
-  max-width: 800px;
-  padding: 20px;
-  background-color: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-}
-
-#interceptModal h3 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  color: #333;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-#interceptModal .modal-body {
-  padding: 0;
-}
-
-#interceptModal .log-details {
-  margin-bottom: 20px;
-}
-
-#interceptModal .modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-/* Improve styling of intercept container and items */
-.intercept-container {
-  max-height: 400px;
-  overflow-y: auto;
-  margin-top: 15px;
-}
-
-.intercepted-request {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 15px;
-  margin-bottom: 10px;
-  background-color: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.intercepted-request-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.intercepted-method {
-  font-weight: 600;
-  min-width: 60px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  text-align: center;
-  color: white;
-  background-color: #007bff;
-}
-
-.intercepted-url {
-  font-size: 0.9rem;
-  color: #333;
-  flex-grow: 1;
-}
-
-.intercepted-actions {
-  display: flex;
-  gap: 8px;
+    gap: 5px; /* Reduce gap between buttons */
+    flex: 0 0 auto; /* Don't grow or shrink */
 }
 
 .intercepted-actions button {
-  padding: 6px 12px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+    padding: 6px 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
 .intercepted-actions button.edit-request {
-  background-color: #2196F3;
+    background-color: #2196F3;
 }
 
 .intercepted-actions button.drop-request {
-  background-color: #f44336;
-}
-
-/* Style the intercept modal like other modals */
-#interceptModal .modal-content {
-  max-width: 800px;
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 20px;
-  background-color: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-}
-
-#interceptModal h3 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  color: #333;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-#interceptModal .modal-body {
-  margin-bottom: 15px;
-}
-
-#interceptModal .log-details {
-  margin-bottom: 20px;
-}
-
-#interceptModal .log-detail-item {
-  margin-bottom: 10px;
-  display: flex;
-}
-
-#interceptModal .log-detail-label {
-  font-weight: 600;
-  width: 120px;
-  color: #555;
-}
-
-#interceptModal .log-detail-value {
-  color: #333;
-}
-
-#interceptModal .modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-/* Style the placeholder similar to other placeholders */
-.intercept-placeholder {
-  text-align: center;
-  padding: 20px;
-  color: #666;
-}
-
-/* Style the intercept controls */
-.intercept-controls {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-/* Intercepted Requests Card and Header */
-.intercept-card {
-  background-color: #2c3e50;
-  border-radius: 6px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.intercept-card .card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.intercept-card .card-header h2 {
-  font-size: 1.8rem;
-  font-weight: 600;
-  margin: 0;
-  color: #4fc3f7;
-}
-
-/* Intercepted container and items */
-.intercept-container {
-  max-height: 400px;
-  overflow-y: auto;
-  padding-right: 5px;
-}
-
-.intercepted-request {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  margin-bottom: 10px;
-  background-color: #253444;
-  border-radius: 6px;
-}
-
-.intercepted-request-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.intercepted-method {
-  font-weight: 600;
-  padding: 5px 10px;
-  border-radius: 4px;
-  text-align: center;
-  color: white;
-  min-width: 80px;
-  background-color: #4fc3f7;
-}
-
-.intercepted-url {
-  color: #e0e0e0;
-  font-size: 0.9rem;
-}
-
-.intercepted-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.intercepted-actions button {
-  background-color: transparent;
-  border: none;
-  cursor: pointer;
-  color: #4fc3f7;
-  font-size: 1.2rem;
-  padding: 5px 10px;
-}
-
-/* Intercept Modal to match mocks modal */
-#interceptModal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s;
-}
-
-#interceptModal.active {
-  opacity: 1;
-  visibility: visible;
-}
-
-#interceptModal .modal-content {
-  width: 90%;
-  max-width: 800px;
-  max-height: 90vh;
-  overflow-y: auto;
-  background-color: #2c3e50;
-  border-radius: 8px;
-  padding: 20px;
-}
-
-#interceptModal h3 {
-  color: #4fc3f7;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-top: 0;
-  margin-bottom: 20px;
-}
-
-#interceptModal .modal-body {
-  color: #e0e0e0;
-}
-
-#interceptModal .log-details {
-  margin-bottom: 20px;
-}
-
-#interceptModal .log-detail-item {
-  margin-bottom: 12px;
-}
-
-#interceptModal .log-detail-label {
-  font-weight: 600;
-  color: #bdbdbd;
-  display: block;
-  margin-bottom: 5px;
-}
-
-#interceptModal .log-detail-value {
-  color: #e0e0e0;
-}
-
-#interceptModal .log-detail-body {
-  background-color: #1e2a38;
-  padding: 15px;
-  border-radius: 4px;
-  max-height: 300px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-#interceptModal .modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-#interceptModal .button {
-  padding: 8px 15px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-#interceptModal .button {
-  background-color: #4fc3f7;
-  color: #fff;
-}
-
-#interceptModal .button-secondary {
-  background-color: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
-}
-
-/* Style tabs in intercept modal */
-#interceptModal .tabs {
-  display: flex;
-  margin-bottom: 20px;
-}
-
-#interceptModal .tab {
-  padding: 10px 20px;
-  background-color: #253444;
-  border: none;
-  color: #e0e0e0;
-  font-size: 1rem;
-  cursor: pointer;
-  margin-right: 5px;
-  border-radius: 4px;
-}
-
-#interceptModal .tab.active {
-  background-color: #37474f;
-  color: #ffffff;
-  font-weight: bold;
-}
-
-/* Headers inside the modal */
-#interceptModal .headers-section h3 {
-  font-size: 1.2rem;
-  margin: 20px 0 15px 0;
-  color: #e0e0e0;
-}
-
-#interceptModal .headers-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-#interceptModal .header-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-#interceptModal .header-name,
-#interceptModal .header-value {
-  padding: 8px 12px;
-  border-radius: 4px;
-  background-color: #1e2a38;
-  color: #e0e0e0;
-  font-family: monospace;
-  border: 1px solid #455a64;
-}
-
-#interceptModal .header-name {
-  color: #4fc3f7;
-}
-
-/* Fix the main section titles/headers to be consistent */
-.card-header h2,
-.compact-header h2,
-.dashboard-grid .card h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-  color: #4fc3f7;
-}
-
-/* Restore the dark theme UI for the intercepted modal content */
-#interceptModal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s;
-}
-
-#interceptModal.active {
-  opacity: 1;
-  visibility: visible;
-}
-
-#interceptModal .modal-content {
-  width: 90%;
-  max-width: 800px;
-  max-height: 90vh;
-  overflow-y: auto;
-  background-color: #2c3e50;
-  border-radius: 8px;
-  padding: 20px;
-}
-
-#interceptModal h3 {
-  color: #4fc3f7;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-top: 0;
-  margin-bottom: 20px;
-}
-
-#interceptModal .modal-body {
-  color: #e0e0e0;
-}
-
-#interceptModal .log-details {
-  margin-bottom: 20px;
-}
-
-#interceptModal .log-detail-item {
-  margin-bottom: 12px;
-}
-
-#interceptModal .log-detail-label {
-  font-weight: 600;
-  color: #bdbdbd;
-  display: block;
-  margin-bottom: 5px;
-}
-
-#interceptModal .log-detail-value {
-  color: #e0e0e0;
-}
-
-#interceptModal .log-detail-body {
-  background-color: #1e2a38;
-  padding: 15px;
-  border-radius: 4px;
-  max-height: 300px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-#interceptModal .modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-#interceptModal .button {
-  padding: 8px 15px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-#interceptModal .button {
-  background-color: #4fc3f7;
-  color: #fff;
-}
-
-#interceptModal .button-secondary {
-  background-color: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
-}
-
-/* Style tabs in intercept modal */
-#interceptModal .tabs {
-  display: flex;
-  margin-bottom: 20px;
-}
-
-#interceptModal .tab {
-  padding: 10px 20px;
-  background-color: #253444;
-  border: none;
-  color: #e0e0e0;
-  font-size: 1rem;
-  cursor: pointer;
-  margin-right: 5px;
-  border-radius: 4px;
-}
-
-#interceptModal .tab.active {
-  background-color: #37474f;
-  color: #ffffff;
-  font-weight: bold;
-}
-
-/* Headers inside the modal */
-#interceptModal .headers-section h3 {
-  font-size: 1.2rem;
-  margin: 20px 0 15px 0;
-  color: #e0e0e0;
-}
-
-#interceptModal .headers-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-#interceptModal .header-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-#interceptModal .header-name,
-#interceptModal .header-value {
-  padding: 8px 12px;
-  border-radius: 4px;
-  background-color: #1e2a38;
-  color: #e0e0e0;
-  font-family: monospace;
-  border: 1px solid #455a64;
-}
-
-#interceptModal .header-name {
-  color: #4fc3f7;
+    background-color: #f44336;
+}
+
+/* Add media queries for better responsiveness in split screen */
+@media (max-width: 992px) {
+    .mock-item, .intercepted-request {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .mock-details, .intercepted-request-info {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .mock-actions, .intercepted-actions {
+        align-self: flex-end;
+    }
+    
+    .mock-action-btn.view-intercepted {
+        font-size: 10px;
+        padding: 3px 5px;
+    }
+    
+    .mock-action-btn svg {
+        width: 12px;
+        height: 12px;
+        margin-right: 1px;
+    }
 }
 
 /* Add styling for the ALL method */
@@ -2562,4 +1850,35 @@ input:disabled + .toggle-switch:before {
 #response-section {
     border-top: 1px solid var(--border-color);
     margin-top: 15px;
+}
+
+/* Header styling for intercepted requests */
+.header-row {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 5px;
+    align-items: center;
+}
+
+.header-name, .header-value {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: #1a1a1a;
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    flex: 1;
+}
+
+.remove-header {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
