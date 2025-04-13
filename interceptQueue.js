@@ -126,6 +126,87 @@ class InterceptQueue {
   }
 
   /**
+   * Fetch the expected response for an intercepted request without forwarding it
+   * @param {string} id Request ID
+   * @returns {Promise<Object>} Promise resolving to the response data
+   */
+  async fetchResponsePreview(id) {
+    const request = this.pendingRequests.get(id);
+
+    if (!request) {
+      throw new Error(`Request with ID ${id} not found`);
+    }
+
+    if (!request._intercepted) {
+      throw new Error(`Request with ID ${id} is not intercepted`);
+    }
+
+    console.log(`Fetching response preview for intercepted request ${id}: ${request.method} ${request.url}`);
+
+    // Build the target URL from the original request
+    const targetUrl = `${process.env.API_SERVICE_URL}${request.url}`;
+
+    // Prepare headers (remove host header to avoid conflicts)
+    const headers = { ...request.headers };
+    delete headers.host;
+
+    try {
+      // Make the actual HTTP request to the target using axios
+      const response = await axios({
+        method: request.method,
+        url: targetUrl,
+        headers: headers,
+        data: request.body,
+        timeout: 30000, // 30 second timeout
+        validateStatus: () => true // Accept all status codes
+      });
+
+      console.log(`Received preview response for request ${id}: ${response.status}`);
+
+      // Format the response body if it's JSON
+      let formattedBody = response.data;
+      if (typeof formattedBody === 'object') {
+        formattedBody = JSON.stringify(formattedBody, null, 2);
+      }
+
+      // Store the response preview in the request object
+      request.responsePreview = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        body: formattedBody,
+        contentType: response.headers['content-type'] || ''
+      };
+
+      // Update the request in the queue
+      this.pendingRequests.set(id, request);
+
+      // Return the response preview
+      return request.responsePreview;
+
+    } catch (error) {
+      console.error(`Error fetching preview for request ${id}:`, error.message);
+
+      // Create an error response
+      const errorResponse = {
+        status: error.response ? error.response.status : 500,
+        statusText: error.response ? error.response.statusText : 'Error',
+        headers: error.response ? error.response.headers : {},
+        body: error.response ? JSON.stringify(error.response.data, null, 2) : error.message,
+        contentType: error.response && error.response.headers['content-type'] ? error.response.headers['content-type'] : 'text/plain',
+        error: true
+      };
+
+      // Store the error response in the request
+      request.responsePreview = errorResponse;
+      this.pendingRequests.set(id, request);
+
+      // Return the error response
+      return errorResponse;
+    }
+  }
+
+  /**
    * Forward an intercepted request
    * @param {string} id Request ID
    * @param {Object} customResponse Custom response object

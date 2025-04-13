@@ -197,50 +197,69 @@ function connectWebSocket() {
                 const timestamp = new Date(data.timestamp);
                 const timeString = timestamp.toLocaleTimeString();
                 
-                // Create log entry with proper formatting
-                const logEntry = document.createElement('div');
-                
-                // Special handling for SYSTEM messages
-                if (data.method === 'SYSTEM') {
-                    // Use success class for system messages to maintain green styling
-                    logEntry.className = 'log-entry success';
-                    logEntry.innerHTML = `
-                        <span class="log-time">${timeString}</span>
-                        <span class="log-method">${data.method}</span>
-                        <span class="log-url">${data.url}</span>
-                        <span class="log-status">${data.status || ''}</span>
-                    `;
-                } else {
-                    // Regular request logs with inline mocked indicator
-                    logEntry.className = 'log-entry';
+                // Use the more modern renderLog function if available
+                // or fallback to the original implementation
+                if (typeof renderLog === 'function') {
+                    // Create a log entry using the new renderer
+                    const logEntry = renderLog(data);
                     
-                    // Use unique class name to avoid style conflicts
-                    const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
-                    
-                    logEntry.innerHTML = `
-                        <span class="log-time">${timeString}</span>
-                        <span class="log-method">${data.method}</span>
-                        <span class="log-url">${data.url}${mockedText}</span>
-                    `;
-                }
-                
-                // Store the log key as a data attribute for use when clicked
-                logEntry.dataset.logKey = logKey;
-                
-                // Add click event listener to show details
-                logEntry.addEventListener('click', function() {
-                    // Get the stored log data using the key
-                    const storedLogData = logDataStore.get(this.dataset.logKey);
-                    if (storedLogData) {
-                        showLogDetails(storedLogData);
+                    // Insert at the top of the container for newest first
+                    if (logContainer.firstChild) {
+                        logContainer.insertBefore(logEntry, logContainer.firstChild);
+                    } else {
+                        logContainer.appendChild(logEntry);
                     }
-                });
-                
-                // Insert at the top of the container for newest first
-                if (logContainer.firstChild) {
-                    logContainer.insertBefore(logEntry, logContainer.firstChild);
                 } else {
-                    logContainer.appendChild(logEntry);
+                    // Create log entry with proper formatting (legacy approach)
+                    const logEntry = document.createElement('div');
+                    
+                    // Special handling for SYSTEM messages
+                    if (data.method === 'SYSTEM') {
+                        // Use success class for system messages to maintain green styling
+                        logEntry.className = 'log-entry success';
+                        logEntry.innerHTML = `
+                            <span class="log-time">${timeString}</span>
+                            <span class="log-method">${data.method}</span>
+                            <span class="log-url">${data.url}</span>
+                            <span class="log-status">${data.status || ''}</span>
+                        `;
+                    } else {
+                        // Regular request logs with inline mocked indicator
+                        logEntry.className = 'log-entry';
+                        
+                        // Use unique class name to avoid style conflicts
+                        const mockedText = data.mocked ? ' <span class="log-mocked-inline">MOCKED</span>' : '';
+                        
+                        logEntry.innerHTML = `
+                            <span class="log-time">${timeString}</span>
+                            <span class="log-method">${data.method}</span>
+                            <span class="log-url">${data.url}${mockedText}</span>
+                        `;
+                    }
+                    
+                    // Store the log key as a data attribute for use when clicked
+                    logEntry.dataset.logKey = logKey;
+                    
+                    // Add click event listener to show details
+                    logEntry.addEventListener('click', function() {
+                        // Get the stored log data using the key
+                        const storedLogData = logDataStore.get(this.dataset.logKey);
+                        if (storedLogData) {
+                            // Use new handler if available, otherwise fall back to old one
+                            if (typeof handleLogClick === 'function') {
+                                handleLogClick(storedLogData);
+                            } else {
+                                showLogDetails(storedLogData);
+                            }
+                        }
+                    });
+                    
+                    // Insert at the top of the container for newest first
+                    if (logContainer.firstChild) {
+                        logContainer.insertBefore(logEntry, logContainer.firstChild);
+                    } else {
+                        logContainer.appendChild(logEntry);
+                    }
                 }
                 
                 // Remove placeholder if it exists
@@ -385,7 +404,131 @@ function setupLogDetailsModal() {
 
 // Show log details in modal
 function showLogDetails(logData) {
-    // Remove this entire function
+    console.log('Showing log details for:', logData);
+    
+    // Create modal if it doesn't exist yet
+    let modal = document.getElementById('logDetailsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'logDetailsModal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    // Determine if this log has a response body (for any HTTP method, not just GET)
+    const hasResponseBody = logData.responseBody && logData.responseBody.length > 0;
+    let formattedResponseBody = '';
+    
+    if (hasResponseBody) {
+        // Format the response body based on content type
+        const contentType = logData.contentType || '';
+        
+        if (contentType.includes('application/json')) {
+            try {
+                // Try to parse and re-format JSON if it's not already formatted
+                if (typeof logData.responseBody === 'string' && !logData.responseBody.includes('\n')) {
+                    const jsonObj = JSON.parse(logData.responseBody);
+                    formattedResponseBody = JSON.stringify(jsonObj, null, 2);
+                } else {
+                    formattedResponseBody = logData.responseBody;
+                }
+            } catch (e) {
+                console.error('Error formatting JSON response body:', e);
+                formattedResponseBody = logData.responseBody;
+            }
+        } else {
+            // For non-JSON responses, just use the string as is
+            formattedResponseBody = logData.responseBody;
+        }
+    }
+    
+    const responseBodyContent = hasResponseBody 
+        ? `<div class="log-detail-item">
+            <div class="log-detail-label">Response Body:</div>
+            <pre class="log-detail-body">${formattedResponseBody}</pre>
+           </div>`
+        : '';
+    
+    // Determine if this log has request body
+    const hasRequestBody = logData.requestBody && 
+        (typeof logData.requestBody === 'object' ? 
+            Object.keys(logData.requestBody).length > 0 : 
+            logData.requestBody.length > 0);
+    
+    const requestBodyContent = hasRequestBody
+        ? `<div class="log-detail-item">
+            <div class="log-detail-label">Request Body:</div>
+            <pre class="log-detail-body">${
+                typeof logData.requestBody === 'object' 
+                    ? JSON.stringify(logData.requestBody, null, 2) 
+                    : logData.requestBody
+            }</pre>
+           </div>`
+        : '';
+    
+    // Format response headers if they exist
+    const responseHeaders = logData.responseHeaders ? Object.entries(logData.responseHeaders)
+        .map(([key, value]) => `<div><strong>${key}:</strong> ${value}</div>`)
+        .join('') : '';
+    
+    const responseHeadersContent = responseHeaders 
+        ? `<div class="log-detail-item">
+            <div class="log-detail-label">Response Headers:</div>
+            <div class="log-detail-headers">${responseHeaders}</div>
+           </div>`
+        : '';
+    
+    // Create modal content with basic request details and any bodies
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Request Details</h3>
+            <div class="log-details">
+                <div class="log-detail-item">
+                    <div class="log-detail-label">Method:</div>
+                    <div class="log-detail-value">${logData.method}</div>
+                </div>
+                <div class="log-detail-item">
+                    <div class="log-detail-label">URL:</div>
+                    <div class="log-detail-value">${logData.url}</div>
+                </div>
+                <div class="log-detail-item">
+                    <div class="log-detail-label">Status:</div>
+                    <div class="log-detail-value">${logData.status || 'Pending'}</div>
+                </div>
+                <div class="log-detail-item">
+                    <div class="log-detail-label">Time:</div>
+                    <div class="log-detail-value">${new Date(logData.timestamp).toLocaleString()}</div>
+                </div>
+                ${logData.contentType ? `
+                <div class="log-detail-item">
+                    <div class="log-detail-label">Content Type:</div>
+                    <div class="log-detail-value">${logData.contentType}</div>
+                </div>
+                ` : ''}
+                ${requestBodyContent}
+                ${responseHeadersContent}
+                ${responseBodyContent}
+            </div>
+            <div class="modal-buttons">
+                <button id="closeLogDetails" class="button">Close</button>
+            </div>
+        </div>
+    `;
+    
+    // Show the modal
+    modal.style.display = 'flex';
+    
+    // Add event listener to close button
+    document.getElementById('closeLogDetails').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Close modal when clicking outside the content
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
 }
 
 // Initialize everything when the DOM is loaded
@@ -1554,64 +1697,193 @@ function showInterceptedRequestModal(id) {
         document.body.appendChild(modal);
     }
 
-    // Populate the modal content
+    // Show loading state
     modal.innerHTML = `
         <div class="modal-content">
-            <h3>Override Response</h3>
+            <h3>Override Request/Response</h3>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Method:</label>
-                    <span class="intercepted-method">${request.method}</span>
-                </div>
-                <div class="form-group">
-                    <label>URL:</label>
-                    <span class="intercepted-url">${request.url}</span>
-                </div>
-                
-                <div class="form-group">
-                    <label for="customStatusCode">Status Code:</label>
-                    <input type="number" id="customStatusCode" class="text-input" value="200" />
-                </div>
-                
-                <div id="request-section">
-                    <h4>Request Headers</h4>
-                    <div id="requestHeadersContainer">
-                        ${Object.entries(request.headers || {}).map(([name, value]) => 
-                            `<div class="header-row">
-                                <input type="text" class="header-name" value="${name}" readonly />
-                                <input type="text" class="header-value" value="${value}" />
-                            </div>`
-                        ).join('')}
-                    </div>
-                    <button id="addRequestHeader" class="button button-small">Add Header</button>
-                    
-                    <h4>Request Body</h4>
-                    <textarea id="requestBody" class="text-area">${
-                        typeof request.body === 'object' 
-                            ? JSON.stringify(request.body, null, 2) 
-                            : request.body || ''
-                    }</textarea>
-                </div>
-                
-                <div id="response-section">
-                    <h4>Response Body</h4>
-                    <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
-                </div>
-                
-                <div class="modal-buttons">
-                    <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
-                    <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
-                    <button id="forwardWithChanges" class="button">Forward</button>
+                <div style="text-align: center; padding: 20px;">
+                    <div class="spinner"></div>
+                    <p>Loading response preview...</p>
                 </div>
             </div>
         </div>
     `;
-
-    // Show the modal
-    modal.classList.add('active');
     
-    // Set up event listeners for the modal
-    setupInterceptModalListeners(id);
+    // Show the modal immediately with loading state
+    modal.classList.add('active');
+
+    // Fetch response preview
+    fetch(`/preview-response/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('Response preview data:', data);
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch response preview');
+            }
+            
+            const preview = data.preview;
+            
+            // Populate the modal content with preview data
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Override Request/Response</h3>
+                    <div class="modal-body">
+                        <div class="tabs">
+                            <div class="tab-buttons">
+                                <button class="tab-button active" data-tab="request-tab">Request</button>
+                                <button class="tab-button" data-tab="response-tab">Response Preview</button>
+                                <button class="tab-button" data-tab="override-tab">Override Response</button>
+                            </div>
+                            
+                            <div class="tab-content active" id="request-tab">
+                                <div class="form-group">
+                                    <label>Method:</label>
+                                    <span class="intercepted-method">${request.method}</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>URL:</label>
+                                    <span class="intercepted-url">${request.url}</span>
+                                </div>
+                                
+                                <h4>Request Headers</h4>
+                                <div id="requestHeadersContainer">
+                                    ${Object.entries(request.headers || {}).map(([name, value]) => 
+                                        `<div class="header-row">
+                                            <input type="text" class="header-name" value="${name}" readonly />
+                                            <input type="text" class="header-value" value="${value}" />
+                                        </div>`
+                                    ).join('')}
+                                </div>
+                                <button id="addRequestHeader" class="button button-small">Add Header</button>
+                                
+                                <h4>Request Body</h4>
+                                <textarea id="requestBody" class="text-area">${
+                                    typeof request.body === 'object' 
+                                        ? JSON.stringify(request.body, null, 2) 
+                                        : request.body || ''
+                                }</textarea>
+                            </div>
+                            
+                            <div class="tab-content" id="response-tab">
+                                <div class="form-group">
+                                    <label>Status Code:</label>
+                                    <span class="preview-status">${preview.status} ${preview.statusText || ''}</span>
+                                </div>
+                                
+                                <h4>Response Headers</h4>
+                                <div class="preview-headers">
+                                    ${Object.entries(preview.headers || {}).map(([name, value]) => 
+                                        `<div><strong>${name}:</strong> ${value}</div>`
+                                    ).join('')}
+                                </div>
+                                
+                                <h4>Response Body</h4>
+                                <pre class="preview-body">${preview.body || '(Empty response body)'}</pre>
+                            </div>
+                            
+                            <div class="tab-content" id="override-tab">
+                                <div class="form-group">
+                                    <label for="customStatusCode">Status Code:</label>
+                                    <input type="number" id="customStatusCode" class="text-input" value="${preview.status || 200}" />
+                                </div>
+                                
+                                <h4>Custom Response Headers</h4>
+                                <div id="responseHeadersContainer">
+                                    ${Object.entries(preview.headers || {}).slice(0, 5).map(([name, value]) => 
+                                        `<div class="header-row">
+                                            <input type="text" class="header-name" value="${name}" />
+                                            <input type="text" class="header-value" value="${value}" />
+                                            <button class="remove-header">×</button>
+                                        </div>`
+                                    ).join('')}
+                                </div>
+                                <button id="addResponseHeader" class="button button-small">Add Header</button>
+                                
+                                <h4>Custom Response Body</h4>
+                                <textarea id="customResponseBody" class="text-area">${preview.body || ''}</textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="modal-buttons">
+                            <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
+                            <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
+                            <button id="forwardOriginal" class="button button-secondary">Forward Original</button>
+                            <button id="forwardWithChanges" class="button">Forward with Changes</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Set up event listeners for the modal
+            setupInterceptModalListeners(id);
+            setupTabs();
+            
+            // Set up response headers container
+            document.getElementById('addResponseHeader').addEventListener('click', () => {
+                addHeaderToContainer(document.getElementById('responseHeadersContainer'));
+            });
+            
+            // Forward original button (no changes)
+            document.getElementById('forwardOriginal').addEventListener('click', () => {
+                forwardInterceptedRequest(id);
+            });
+            
+            // Drop request button
+            document.getElementById('dropRequestBtn').addEventListener('click', () => {
+                dropInterceptedRequest(id);
+                document.getElementById('interceptModal').classList.remove('active');
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching response preview:', error);
+            
+            // Show error state in modal
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3>Override Request/Response</h3>
+                    <div class="modal-body">
+                        <div class="alert alert-error">
+                            Failed to fetch response preview: ${error.message}
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Method:</label>
+                            <span class="intercepted-method">${request.method}</span>
+                        </div>
+                        <div class="form-group">
+                            <label>URL:</label>
+                            <span class="intercepted-url">${request.url}</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="customStatusCode">Status Code:</label>
+                            <input type="number" id="customStatusCode" class="text-input" value="200" />
+                        </div>
+                        
+                        <h4>Request Body</h4>
+                        <textarea id="requestBody" class="text-area" readonly>${
+                            typeof request.body === 'object' 
+                                ? JSON.stringify(request.body, null, 2) 
+                                : request.body || ''
+                        }</textarea>
+                        
+                        <h4>Custom Response Body</h4>
+                        <textarea id="customResponseBody" class="text-area" placeholder='{"message": "Custom response"}'></textarea>
+                        
+                        <div class="modal-buttons">
+                            <button id="closeInterceptModal" class="button button-secondary">Cancel</button>
+                            <button id="dropRequestBtn" class="button button-secondary" style="background-color: #d9534f;">Drop</button>
+                            <button id="forwardWithChanges" class="button">Forward with Changes</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Set up event listeners for the error state
+            setupInterceptModalListeners(id);
+        });
 }
 
 function setupTabs() {
@@ -1686,109 +1958,153 @@ function applyInterceptedChanges(requestId) {
         return;
     }
     
-    // Get updated values
-    const urlInput = document.getElementById('interceptedUrl');
-    const statusInput = document.getElementById('interceptedStatus');
-    const bodyInput = document.getElementById('interceptedBody');
-    const headersContainer = document.getElementById('interceptedHeaders');
+    // Check which tab is active to determine if we're modifying the request or overriding the response
+    const responseTabActive = document.querySelector('#override-tab.active') !== null;
     
-    // Update URL if changed
-    if (urlInput && urlInput.value.trim() !== request.url) {
-        request.url = urlInput.value.trim();
-    }
+    // Get status code from the override tab
+    const statusCodeInput = document.getElementById('customStatusCode');
+    const statusCode = statusCodeInput ? parseInt(statusCodeInput.value, 10) : 200;
     
-    // Update status code
-    if (statusInput) {
-        const statusCode = parseInt(statusInput.value, 10);
-        if (!isNaN(statusCode)) {
-            request.status = statusCode;
-        }
-    }
+    // Get response body from the override tab
+    const responseBodyInput = document.getElementById('customResponseBody');
+    const responseBody = responseBodyInput ? responseBodyInput.value.trim() : '';
     
-    // Update body
-    if (bodyInput) {
-        try {
-            // Try to parse as JSON
-            const bodyValue = bodyInput.value.trim();
-            try {
-                // Check if it's valid JSON
-                JSON.parse(bodyValue);
-                // If it's valid JSON, save as string
-                request.body = bodyValue;
-            } catch (e) {
-                // Not valid JSON, save as is
-                request.body = bodyValue;
-            }
-        } catch (error) {
-            console.error('Error updating request body:', error);
-        }
-    }
+    // Get response headers from the override tab
+    const responseHeadersContainer = document.getElementById('responseHeadersContainer');
+    const responseHeaders = {};
     
-    // Update headers
-    if (headersContainer) {
-        const headerRows = headersContainer.querySelectorAll('.header-row');
-        const headers = {...request.headers}; // Clone existing headers
-        
-        // Clear non-internal headers
-        for (const key of Object.keys(headers)) {
-            if (!key.startsWith('_')) {
-                delete headers[key];
-            }
-        }
-        
-        // Add updated headers
+    if (responseHeadersContainer) {
+        const headerRows = responseHeadersContainer.querySelectorAll('.header-row');
         headerRows.forEach(row => {
             const nameInput = row.querySelector('.header-name');
             const valueInput = row.querySelector('.header-value');
             
             if (nameInput && valueInput && nameInput.value.trim()) {
-                headers[nameInput.value.trim()] = valueInput.value;
+                responseHeaders[nameInput.value.trim()] = valueInput.value;
             }
         });
-        
-        request.headers = headers;
     }
     
-    // Update in the array
+    // Get updated request values (only if needed)
+    if (!responseTabActive) {
+        // Update request body if in the request tab
+        const requestBodyInput = document.getElementById('requestBody');
+        if (requestBodyInput) {
+            try {
+                const bodyValue = requestBodyInput.value.trim();
+                // Try to parse as JSON to ensure it's valid
+                try {
+                    JSON.parse(bodyValue);
+                    // Valid JSON, use as is
+                } catch (e) {
+                    // Not valid JSON, but that might be ok for some content types
+                    console.log('Request body is not valid JSON, using as raw text');
+                }
+                
+                // Update request body (could be JSON string or raw text)
+                request.body = bodyValue;
+                
+            } catch (error) {
+                console.error('Error updating request body:', error);
+            }
+        }
+        
+        // Update request headers
+        const requestHeadersContainer = document.getElementById('requestHeadersContainer');
+        if (requestHeadersContainer) {
+            const headerRows = requestHeadersContainer.querySelectorAll('.header-row');
+            const headers = {...request.headers}; // Clone existing headers
+            
+            // Clear non-internal headers
+            for (const key of Object.keys(headers)) {
+                if (!key.startsWith('_')) {
+                    delete headers[key];
+                }
+            }
+            
+            // Add updated headers
+            headerRows.forEach(row => {
+                const nameInput = row.querySelector('.header-name');
+                const valueInput = row.querySelector('.header-value');
+                
+                if (nameInput && valueInput && nameInput.value.trim()) {
+                    headers[nameInput.value.trim()] = valueInput.value;
+                }
+            });
+            
+            // Update request headers
+            request.headers = headers;
+        }
+    }
+    
+    // Create custom response object if we're overriding the response
+    const customResponse = {
+        statusCode: statusCode,
+        body: responseBody,
+        headers: responseHeaders
+    };
+    
+    // Store custom response in the request object
+    request.customResponse = customResponse;
+    
+    console.log('Applied intercepted changes:', {
+        requestId,
+        requestBody: request.body,
+        customResponse,
+        responseTabActive
+    });
+    
+    // Update the request in the interceptedRequests array
     const index = interceptedRequests.findIndex(req => req.interceptionId === requestId);
     if (index !== -1) {
         interceptedRequests[index] = request;
     }
-    
-    console.log('Updated request:', request);
 }
 
 function forwardInterceptedRequest(requestId) {
-    // Always disable custom response override when forwarding directly
-    const modal = document.getElementById('interceptModal');
-    const isFromModal = modal && modal.classList.contains('active');
+    // Find the request in our local array
+    const request = interceptedRequests.find(req => req.interceptionId === requestId);
+    if (!request) {
+        console.error('Request not found:', requestId);
+        return;
+    }
     
-    let useCustomResponse = false;
+    // Close the modal if it's open
+    const modal = document.getElementById('interceptModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    
+    console.log('Forwarding request with ID:', requestId);
+    
+    // Determine if we should use custom response
     let customResponseData = null;
     
-    // Only use custom response if we're coming from the modal
-    if (isFromModal) {
-        useCustomResponse = true;
+    // Use custom response if it was defined in the request object
+    if (request.customResponse) {
+        console.log('Using custom response:', request.customResponse);
+        customResponseData = request.customResponse;
         
-        const statusCode = parseInt(document.getElementById('customStatusCode')?.value || '200');
-        
-        // Use empty headers object since we removed the response headers section
-        const responseHeaders = { 'Content-Type': 'application/json' };
-        
-        // Get custom response body
-        let responseBody = document.getElementById('customResponseBody')?.value || '';
-        try {
-            // Try to parse as JSON, but keep as string if it fails
-            responseBody = JSON.parse(responseBody);
-        } catch (e) {
-            // Leave as string if not valid JSON
+        // If response body is a string but looks like JSON, try to parse it
+        if (typeof customResponseData.body === 'string' && 
+            customResponseData.body.trim().startsWith('{') && 
+            customResponseData.body.trim().endsWith('}')) {
+            try {
+                customResponseData.body = JSON.parse(customResponseData.body);
+                console.log('Parsed response body as JSON');
+            } catch (e) {
+                console.log('Failed to parse response body as JSON, using as string');
+            }
         }
         
-        customResponseData = {
-            statusCode,
-            headers: responseHeaders,
-            body: responseBody
-        };
+        // Make sure Content-Type is set for JSON responses
+        if (typeof customResponseData.body === 'object' && 
+            (!customResponseData.headers || !customResponseData.headers['Content-Type'])) {
+            customResponseData.headers = {
+                ...customResponseData.headers,
+                'Content-Type': 'application/json'
+            };
+        }
     }
     
     // Make the request to forward the intercepted request
@@ -1798,23 +2114,22 @@ function forwardInterceptedRequest(requestId) {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            customResponse: useCustomResponse ? customResponseData : null
+            customResponse: customResponseData
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
+            console.log('Successfully forwarded request:', requestId);
+            
             // Remove the request from our list
             interceptedRequests = interceptedRequests.filter(
                 req => req.interceptionId !== requestId
             );
             updateInterceptedRequestsUI();
-            
-            // Close the modal if it's open
-            if (modal) modal.classList.remove('active');
         } else {
             console.error('Error forwarding request:', data.error);
-            alert(`Error forwarding request: ${data.error}`);
+            alert(`Failed to forward request: ${data.error}`);
         }
     })
     .catch(error => {
@@ -2029,4 +2344,292 @@ function toggleInterceptMode(enabled) {
         }
         alert(`Error toggling intercept mode: ${error.message}`);
     });
+}
+
+function handleLogClick(logEntry) {
+    console.log("Log entry clicked:", logEntry);
+    
+    // Create modal for displaying log details
+    const modal = document.createElement('div');
+    modal.className = 'log-details-modal';
+    
+    const modalContent = document.createElement('div');
+    modalContent.className = 'log-details-content';
+    
+    // Close button
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'close-button';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = () => modal.remove();
+    
+    // Header with method, URL and status
+    const header = document.createElement('div');
+    header.className = 'log-details-header';
+    
+    const methodSpan = document.createElement('span');
+    methodSpan.className = `method ${logEntry.method.toLowerCase()}`;
+    methodSpan.textContent = logEntry.method;
+    
+    const urlSpan = document.createElement('span');
+    urlSpan.className = 'url';
+    urlSpan.textContent = logEntry.url;
+    
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `status status-${Math.floor(logEntry.status / 100)}xx`;
+    statusSpan.textContent = logEntry.status;
+    
+    header.appendChild(methodSpan);
+    header.appendChild(urlSpan);
+    header.appendChild(statusSpan);
+    
+    // Timestamps
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'log-details-timestamp';
+    timestampDiv.textContent = `Time: ${new Date(logEntry.timestamp).toLocaleString()}`;
+    
+    // Body container
+    const bodyContainer = document.createElement('div');
+    bodyContainer.className = 'log-details-body';
+    
+    // Tabs for Request/Response
+    const tabsContainer = document.createElement('div');
+    tabsContainer.className = 'details-tabs';
+    
+    const requestTab = document.createElement('div');
+    requestTab.className = 'details-tab active';
+    requestTab.textContent = 'Request';
+    requestTab.dataset.tab = 'request';
+    
+    const responseTab = document.createElement('div');
+    responseTab.className = 'details-tab';
+    responseTab.textContent = 'Response';
+    responseTab.dataset.tab = 'response';
+    
+    tabsContainer.appendChild(requestTab);
+    tabsContainer.appendChild(responseTab);
+    
+    // Tab content containers
+    const requestContent = document.createElement('div');
+    requestContent.className = 'tab-content request-content active';
+    
+    const responseContent = document.createElement('div');
+    responseContent.className = 'tab-content response-content';
+    
+    // REQUEST CONTENT
+    // Headers section for request
+    const requestHeadersSection = document.createElement('div');
+    requestHeadersSection.className = 'details-section';
+    
+    const requestHeadersTitle = document.createElement('h3');
+    requestHeadersTitle.textContent = 'Headers';
+    requestHeadersSection.appendChild(requestHeadersTitle);
+    
+    const requestHeadersList = document.createElement('div');
+    requestHeadersList.className = 'headers-list';
+    
+    // Add request headers if available
+    if (logEntry.requestHeaders) {
+        for (const [key, value] of Object.entries(logEntry.requestHeaders)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `<strong>${key}:</strong> ${value}`;
+            requestHeadersList.appendChild(headerItem);
+        }
+    } else {
+        requestHeadersList.textContent = 'No headers available';
+    }
+    
+    requestHeadersSection.appendChild(requestHeadersList);
+    requestContent.appendChild(requestHeadersSection);
+    
+    // Body section for request
+    const requestBodySection = document.createElement('div');
+    requestBodySection.className = 'details-section';
+    
+    const requestBodyTitle = document.createElement('h3');
+    requestBodyTitle.textContent = 'Body';
+    requestBodySection.appendChild(requestBodyTitle);
+    
+    const requestBodyContent = document.createElement('pre');
+    requestBodyContent.className = 'body-content';
+    
+    // Add request body if available
+    if (logEntry.requestBody && typeof logEntry.requestBody === 'object' && Object.keys(logEntry.requestBody).length > 0) {
+        requestBodyContent.textContent = JSON.stringify(logEntry.requestBody, null, 2);
+    } else if (logEntry.requestBody && typeof logEntry.requestBody === 'string' && logEntry.requestBody.trim() !== '') {
+        requestBodyContent.textContent = logEntry.requestBody;
+    } else {
+        requestBodyContent.textContent = 'No body content';
+        requestBodyContent.className += ' no-content';
+    }
+    
+    requestBodySection.appendChild(requestBodyContent);
+    requestContent.appendChild(requestBodySection);
+    
+    // RESPONSE CONTENT
+    // Headers section for response
+    const responseHeadersSection = document.createElement('div');
+    responseHeadersSection.className = 'details-section';
+    
+    const responseHeadersTitle = document.createElement('h3');
+    responseHeadersTitle.textContent = 'Headers';
+    responseHeadersSection.appendChild(responseHeadersTitle);
+    
+    const responseHeadersList = document.createElement('div');
+    responseHeadersList.className = 'headers-list';
+    
+    // Add response headers if available
+    if (logEntry.responseHeaders) {
+        for (const [key, value] of Object.entries(logEntry.responseHeaders)) {
+            const headerItem = document.createElement('div');
+            headerItem.className = 'header-item';
+            headerItem.innerHTML = `<strong>${key}:</strong> ${value}`;
+            responseHeadersList.appendChild(headerItem);
+        }
+    } else {
+        responseHeadersList.textContent = 'No headers available';
+    }
+    
+    responseHeadersSection.appendChild(responseHeadersList);
+    responseContent.appendChild(responseHeadersSection);
+    
+    // Body section for response
+    const responseBodySection = document.createElement('div');
+    responseBodySection.className = 'details-section';
+    
+    const responseBodyTitle = document.createElement('h3');
+    responseBodyTitle.textContent = 'Body';
+    responseBodySection.appendChild(responseBodyTitle);
+    
+    const responseBodyContent = document.createElement('pre');
+    responseBodyContent.className = 'body-content';
+    
+    // Add response body if available (now for all methods including GET)
+    if (logEntry.responseBody && logEntry.responseBody.trim() !== '') {
+        if (logEntry.contentType && logEntry.contentType.includes('application/json')) {
+            try {
+                // If it's already formatted JSON (with newlines), use it as is
+                if (logEntry.responseBody.includes('\n')) {
+                    responseBodyContent.textContent = logEntry.responseBody;
+                } else {
+                    // Try to parse and reformat
+                    const jsonObj = JSON.parse(logEntry.responseBody);
+                    responseBodyContent.textContent = JSON.stringify(jsonObj, null, 2);
+                }
+                responseBodyContent.classList.add('json');
+            } catch (e) {
+                // If parsing fails, show as is
+                responseBodyContent.textContent = logEntry.responseBody;
+            }
+        } else {
+            responseBodyContent.textContent = logEntry.responseBody;
+        }
+    } else {
+        responseBodyContent.textContent = 'No body content';
+        responseBodyContent.className += ' no-content';
+    }
+    
+    responseBodySection.appendChild(responseBodyContent);
+    responseContent.appendChild(responseBodySection);
+    
+    // Tab click handlers
+    requestTab.addEventListener('click', () => {
+        requestTab.classList.add('active');
+        responseTab.classList.remove('active');
+        requestContent.classList.add('active');
+        responseContent.classList.remove('active');
+    });
+    
+    responseTab.addEventListener('click', () => {
+        responseTab.classList.add('active');
+        requestTab.classList.remove('active');
+        responseContent.classList.add('active');
+        requestContent.classList.remove('active');
+    });
+    
+    // Assemble modal content
+    bodyContainer.appendChild(tabsContainer);
+    bodyContainer.appendChild(requestContent);
+    bodyContainer.appendChild(responseContent);
+    
+    modalContent.appendChild(closeBtn);
+    modalContent.appendChild(header);
+    modalContent.appendChild(timestampDiv);
+    modalContent.appendChild(bodyContainer);
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Add event listener to close modal when clicking outside
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+function renderLog(logEntry) {
+    const logItem = document.createElement('div');
+    logItem.className = 'log-item';
+    logItem.dataset.id = logEntry.id;
+    
+    // Add class for different status codes
+    if (logEntry.status) {
+        const statusClass = Math.floor(logEntry.status / 100);
+        logItem.classList.add(`status-${statusClass}xx`);
+    }
+    
+    // Method
+    const method = document.createElement('span');
+    method.className = `method ${logEntry.method.toLowerCase()}`;
+    method.textContent = logEntry.method;
+    logItem.appendChild(method);
+    
+    // URL path (truncated if too long)
+    const url = document.createElement('span');
+    url.className = 'url';
+    
+    try {
+        const urlObj = new URL(logEntry.url);
+        let displayPath = urlObj.pathname;
+        if (displayPath.length > 40) {
+            displayPath = displayPath.substring(0, 37) + '...';
+        }
+        url.textContent = displayPath;
+        url.title = logEntry.url; // Show full URL on hover
+    } catch (e) {
+        url.textContent = logEntry.url;
+    }
+    logItem.appendChild(url);
+    
+    // Status code if available
+    if (logEntry.status) {
+        const status = document.createElement('span');
+        status.className = 'status';
+        status.textContent = logEntry.status;
+        logItem.appendChild(status);
+    }
+    
+    // Time
+    const time = document.createElement('span');
+    time.className = 'time';
+    const date = new Date(logEntry.timestamp);
+    time.textContent = date.toLocaleTimeString();
+    logItem.appendChild(time);
+    
+    // Add indicator for clickable logs with response body
+    if (logEntry.responseBody) {
+        const indicator = document.createElement('span');
+        indicator.className = 'body-indicator';
+        indicator.title = 'View request/response details';
+        indicator.textContent = '↗';
+        logItem.appendChild(indicator);
+    }
+    
+    // Add click event to view details
+    logItem.addEventListener('click', () => {
+        handleLogClick(logEntry);
+    });
+    
+    return logItem;
 }

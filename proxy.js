@@ -923,6 +923,60 @@ app.post('/drop-request/:id', (req, res) => {
     }
 });
 
+// Add endpoint to fetch response preview for intercepted request
+app.get('/preview-response/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Check if request exists
+        const interceptedRequest = interceptQueue.getRequest(id);
+        
+        if (!interceptedRequest) {
+            return res.status(404).json({
+                success: false,
+                error: `Request with ID ${id} not found`
+            });
+        }
+        
+        console.log(`Fetching response preview for request ${id}`);
+        
+        // If we already have a response preview, return it
+        if (interceptedRequest.responsePreview) {
+            console.log(`Using cached response preview for request ${id}`);
+            return res.json({
+                success: true,
+                preview: interceptedRequest.responsePreview
+            });
+        }
+        
+        // Otherwise, fetch a new response preview
+        const preview = await interceptQueue.fetchResponsePreview(id);
+        
+        // Broadcast a preview log
+        broadcastLog({
+            timestamp: new Date().toISOString(),
+            method: interceptedRequest.method,
+            url: interceptedRequest.url,
+            status: preview.status,
+            tag: 'preview',
+            responseBody: preview.body,
+            responseHeaders: preview.headers,
+            contentType: preview.contentType
+        });
+        
+        res.json({
+            success: true,
+            preview: preview
+        });
+    } catch (error) {
+        console.error('Error fetching response preview:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Add this to your proxy.js file where you handle request forwarding
 app.post('/forward-intercepted-request/:id', (req, res) => {
     const requestId = req.params.id;
@@ -954,23 +1008,48 @@ app.post('/forward-intercepted-request/:id', (req, res) => {
                 });
             }
             
+            // Prepare the response body - could be object or string
+            let responseBody = customResponse.body;
+            
+            // If the body is a string but looks like JSON, try to parse it for proper sending
+            if (typeof responseBody === 'string' && 
+                responseBody.trim().startsWith('{') && 
+                responseBody.trim().endsWith('}')) {
+                try {
+                    responseBody = JSON.parse(responseBody);
+                    console.log(`Parsed custom response body as JSON for request ${requestId}`);
+                } catch (e) {
+                    console.log(`Could not parse custom response as JSON, using as raw text for request ${requestId}`);
+                    // Keep as string if parsing fails
+                }
+            }
+            
+            // Add Content-Type header for JSON if not already set
+            if (typeof responseBody === 'object' && 
+                (!customResponse.headers || !customResponse.headers['Content-Type'])) {
+                originalRes.set('Content-Type', 'application/json');
+            }
+            
             // Send the body
-            originalRes.send(customResponse.body);
+            originalRes.send(responseBody);
             
             // Remove from the queue
             interceptQueue.dropRequest(requestId);
             
             // Log this as a custom response
             console.log(`Sent custom response for intercepted request ${requestId}`);
-            if (broadcastLog) {
-                broadcastLog({
-                    timestamp: new Date().toISOString(),
-                    method: interceptedRequest.method,
-                    url: interceptedRequest.url,
-                    status: customResponse.statusCode || 200,
-                    tag: 'custom-response'
-                });
-            }
+            
+            // Create log entry for the custom response
+            broadcastLog({
+                timestamp: new Date().toISOString(),
+                method: interceptedRequest.method,
+                url: interceptedRequest.url,
+                status: customResponse.statusCode || 200,
+                responseBody: typeof responseBody === 'object' ? JSON.stringify(responseBody, null, 2) : responseBody,
+                responseHeaders: customResponse.headers || {},
+                tag: 'custom-response',
+                isResponse: true
+            });
             
             return res.json({ success: true });
         } else {
@@ -1252,7 +1331,7 @@ function setupProxyMiddleware() {
             }
         },
         onProxyRes: (proxyRes, req, res) => {
-            console.log('Response received:', proxyRes.statusCode, req.url);
+            console.log(`Response received: ${proxyRes.statusCode} ${req.method} ${req.url}`);
             
             // Create a buffer to collect response data
             let responseBody = [];
@@ -1268,56 +1347,88 @@ function setupProxyMiddleware() {
                 const statusCode = proxyRes.statusCode.toString();
                 requestStats.statusCodes[statusCode] = (requestStats.statusCodes[statusCode] || 0) + 1;
                 
-                // Process the response body
+                // Create log data with basic info
+                const timestamp = new Date().toISOString();
+                const logData = {
+                    timestamp,
+                    method: req.method,
+                    url: req.url,
+                    status: proxyRes.statusCode,
+                    mocked: false,
+                    contentType: proxyRes.headers['content-type'] || '',
+                    responseHeaders: proxyRes.headers
+                };
+                
+                // Process the response body (for all HTTP methods, not just GET)
                 let parsedBody = '';
                 try {
                     // Combine chunks into a buffer and convert to string
                     const bodyBuffer = Buffer.concat(responseBody);
-                    const bodyString = bodyBuffer.toString('utf8');
                     
-                    // Try to parse as JSON if possible
-                    try {
-                        const contentType = proxyRes.headers['content-type'] || '';
-                        if (contentType.includes('application/json')) {
-                            // For JSON, parse then stringify with formatting
+                    // Debug the response
+                    console.log(`[Debug] Response for ${req.method} ${req.url} received. Body size: ${bodyBuffer.length} bytes`);
+                    console.log(`[Debug] Content-Type: ${proxyRes.headers['content-type'] || 'not specified'}`);
+                    
+                    // Handle different content types appropriately
+                    const contentType = proxyRes.headers['content-type'] || '';
+                    
+                    if (bodyBuffer.length === 0) {
+                        console.log(`[Debug] Empty response body for ${req.method} ${req.url}`);
+                        parsedBody = '';
+                    } 
+                    else if (contentType.includes('application/json')) {
+                        // For JSON, parse then stringify with formatting
+                        const bodyString = bodyBuffer.toString('utf8');
+                        try {
                             const jsonObj = JSON.parse(bodyString);
                             parsedBody = JSON.stringify(jsonObj, null, 2);
-                        } else {
-                            // For non-JSON, just use the string
+                            console.log(`[Debug] Successfully parsed JSON response for ${req.method} ${req.url}`);
+                        } catch (e) {
+                            console.error(`[Debug] Failed to parse JSON: ${e.message}`);
                             parsedBody = bodyString;
                         }
-                    } catch (e) {
-                        // If JSON parsing fails, use the raw string
-                        parsedBody = bodyString;
+                    } 
+                    else if (contentType.includes('text/')) {
+                        // For text content types
+                        parsedBody = bodyBuffer.toString('utf8');
+                        console.log(`[Debug] Processed text response for ${req.method} ${req.url}`);
+                    }
+                    else if (contentType.includes('application/xml') || contentType.includes('+xml')) {
+                        // For XML content
+                        parsedBody = bodyBuffer.toString('utf8');
+                        console.log(`[Debug] Processed XML response for ${req.method} ${req.url}`);
+                    }
+                    else {
+                        // For binary or unknown content types, truncate or summarize
+                        if (bodyBuffer.length > 5000) {
+                            parsedBody = `[Binary data truncated, total size: ${bodyBuffer.length} bytes]`;
+                        } else {
+                            try {
+                                parsedBody = bodyBuffer.toString('utf8');
+                                console.log(`[Debug] Processed response as UTF8 for ${req.method} ${req.url}`);
+                            } catch (e) {
+                                parsedBody = `[Binary data, length: ${bodyBuffer.length} bytes]`;
+                                console.log(`[Debug] Processed binary response for ${req.method} ${req.url}`);
+                            }
+                        }
                     }
                     
-                    // If the body is too large, truncate it
-                    if (parsedBody.length > 10000) {
-                        parsedBody = parsedBody.substring(0, 10000) + '... [truncated]';
+                    // Add parsed body to log data
+                    logData.responseBody = parsedBody;
+                    
+                    // If request body exists, add it to the log data
+                    if (req.body && Object.keys(req.body).length > 0) {
+                        logData.requestBody = req.body;
                     }
+                    
+                    // Broadcast the complete log
+                    broadcastLog(logData);
+                    
                 } catch (error) {
-                    console.error('Error processing response body:', error);
-                    parsedBody = '[Error processing response body]';
+                    console.error(`Error processing response body: ${error.message}`);
+                    // Still broadcast the log without the body
+                    broadcastLog(logData);
                 }
-                
-                // Create log data with response body included
-                const logData = {
-                    timestamp: new Date().toISOString(),
-                    method: req.method,
-                    url: req.url,
-                    status: proxyRes.statusCode,
-                    responseBody: parsedBody // Include the parsed response body
-                };
-                
-                // Special handling for non-intercepted requests during intercept mode
-                if (interceptQueue.isInterceptionEnabled() && req._wasNotIntercepted) {
-                    logData.tag = 'non-intercepted';
-                    // Ensure non-intercepted requests are always logged
-                    console.log(`Logging non-intercepted request response: ${req.method} ${req.url} ${proxyRes.statusCode}`);
-                }
-                
-                // Broadcast the log with response body
-                broadcastLog(logData);
             });
         },
         onError: (err, req, res) => {
