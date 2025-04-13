@@ -22,6 +22,9 @@ let isInitialMockStateCapture = true; // Flag to track initial state capture
 // Global variable to store intercept rules
 let interceptRules = [];
 
+// Host address for displaying in UI examples
+const HOST_ADDRESS = '0.0.0.0:3333';
+
 // Fetch server info and update UI 
 function fetchServerInfo() {
     fetch('/info')
@@ -44,6 +47,12 @@ function fetchServerInfo() {
             if (startTimeElement) {
                 const startTime = new Date(data.proxyStartTime);
                 startTimeElement.textContent = startTime.toLocaleString();
+            }
+            
+            // Update API URL example to use 0.0.0.0 instead of localhost
+            const apiExample = document.getElementById('apiUrlExample');
+            if (apiExample) {
+                apiExample.textContent = `http://${HOST_ADDRESS}/your-endpoint`;
             }
             
             // Update target example

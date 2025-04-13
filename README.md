@@ -10,8 +10,8 @@
      - Start the proxy server on port 3333
 
 2. The proxy server will be available at:
-   - Dashboard: `http://localhost:3333`
-   - API Endpoint: `http://localhost:3333/api`
+   - Dashboard: `http://0.0.0.0:3333`
+   - API Endpoint: `http://0.0.0.0:3333/api`
 
 ### Client Configuration
 

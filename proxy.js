@@ -1534,22 +1534,20 @@ server.listen(PORT, HOST, () => {
     console.log(`Starting Proxy at ${HOST}:${PORT}`);
     console.log(`Proxy Target: ${API_SERVICE_URL}`);
     
-    // Open browser automatically
+    // Only open browser once when server starts
     const protocol = useHttps ? 'https' : 'http';
     const url = `${protocol}://${HOST}:${PORT}`;
     console.log(`Opening browser at: ${url}`);
     
-    // Use platform-specific commands to open the browser
-    const { exec } = require('child_process');
-    const command = process.platform === 'darwin' ? `open "${url}"` : 
-                  process.platform === 'win32' ? `start "${url}"` : 
-                  `xdg-open "${url}"`;
-    
-    exec(command, (error) => {
-        if (error) {
-            console.error('Failed to open browser:', error);
-        }
-    });
+    try {
+        // Use open module instead of exec for better cross-platform support
+        const open = require('open');
+        open(url).catch(error => {
+            console.error('Failed to open browser with open module:', error);
+        });
+    } catch (error) {
+        console.error('Failed to open browser:', error);
+    }
 });
 
 // Export for testing

@@ -3,102 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Proxy Server Dashboard</title>
+    <title>API Proxy Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Additional styles for log files and error states */
-        .log-files-container {
-            max-height: 400px;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            padding: 8px;
-            border-radius: 6px;
-            background-color: #f5f5f5;
+        /* Additional styles to enhance the UI */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 15px;
+            background-color: #1a1a1a;
+            color: #ecf0f1;
         }
-        
-        .log-file-item {
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            background-color: #fff;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #34495e;
         }
-        
-        .log-file-info {
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        @media (min-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr 2fr;
+            }
+        }
+
+        .card {
+            background: #2c3e50;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #34495e;
+        }
+
+        .card h2 {
+            color: #3498db;
+            margin-top: 0;
             display: flex;
-            flex-direction: column;
+            align-items: center;
         }
-        
-        .log-file-name {
-            font-weight: 600;
-            margin-bottom: 4px;
+
+        .card h2 i {
+            margin-right: 10px;
         }
-        
-        .log-file-date, .log-file-size {
-            font-size: 0.85rem;
-            color: #666;
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
         }
-        
-        .download-log-file {
-            padding: 6px 12px;
-            background-color: #4CAF50;
+
+        .log-card, .intercept-card {
+            grid-column: 1 / -1;
+        }
+
+        .button {
+            background-color: #3498db;
             color: white;
             border: none;
+            padding: 8px 15px;
             border-radius: 4px;
             cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.2s;
         }
-        
-        .download-log-file:hover {
-            background-color: #45a049;
+
+        .button:hover {
+            background-color: #2980b9;
         }
-        
-        .log-files-placeholder {
-            text-align: center;
-            padding: 20px;
-            color: #666;
+
+        .button-secondary {
+            background-color: #34495e;
         }
-        
-        .mocks-error {
-            text-align: center;
-            padding: 20px;
-            color: #d32f2f;
-            background-color: #ffebee;
-            border-radius: 6px;
+
+        .button-secondary:hover {
+            background-color: #2c3e50;
         }
-        
-        .mocks-error p {
-            margin-bottom: 10px;
+
+        .usage-guide {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #2c3e50;
+            border: 1px solid #34495e;
+        }
+
+        .usage-guide h3 {
+            color: #3498db;
+            margin-top: 0;
+        }
+
+        code {
+            background: #1a1a1a;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Proxy Server Dashboard</h1>
+            <h1><i class="fas fa-exchange-alt"></i> API Proxy Dashboard</h1>
             <div class="header-actions">
-                <button id="showGuide" class="button button-secondary" style="margin-right: 10px;">Show Guide</button>
+                <button id="showGuide" class="button button-secondary" style="margin-right: 10px;">
+                    <i class="fas fa-question-circle"></i> Guide
+                </button>
                 <div class="status-badge" id="proxyStatus">Checking...</div>
             </div>
         </header>
 
         <div class="usage-guide" style="display: none;">
-            <h3>Quick Start Guide</h3>
+            <h3><i class="fas fa-book"></i> Quick Start Guide</h3>
             <ol>
                 <li>Set your <strong>Target URL</strong> to the API service you want to proxy</li>
-                <li>Send API requests to <code id="apiUrlExample">http://localhost:3333/your-endpoint</code></li>
+                <li>Send API requests to <code id="apiUrlExample">http://0.0.0.0:3333/your-endpoint</code></li>
                 <li>Requests will be forwarded to <code id="targetUrlExample">https://api.example.com/your-endpoint</code></li>
                 <li>Create <strong>API Mocks</strong> to simulate responses without hitting the actual API</li>
                 <li>View logs and statistics in real-time below</li>
             </ol>
-            <button id="hideGuide" class="button button-secondary">Hide Guide</button>
+            <button id="hideGuide" class="button button-secondary">
+                <i class="fas fa-times"></i> Hide Guide
+            </button>
         </div>
 
         <div class="dashboard-grid">
             <div class="card status-card">
-                <h2>Server Configuration</h2>
+                <h2><i class="fas fa-server"></i> Server Configuration</h2>
                 <div class="config-grid">
                     <div class="config-item">
                         <label>Target URL:</label>
@@ -120,8 +167,10 @@
 
             <div class="card mocks-card">
                 <div class="card-header">
-                    <h2>API Mocks</h2>
-                    <button id="addMock" class="button button-secondary">Add Mock</button>
+                    <h2><i class="fas fa-code"></i> API Mocks</h2>
+                    <button id="addMock" class="button button-secondary">
+                        <i class="fas fa-plus"></i> Add Mock
+                    </button>
                 </div>
                 <div id="mocksContainer" class="mocks-container">
                     <div class="mocks-placeholder">No mocks configured yet...</div>
@@ -130,19 +179,21 @@
 
             <div class="card intercept-card">
                 <div class="card-header">
-                    <h2>Intercept Requests</h2>
+                    <h2><i class="fas fa-filter"></i> Intercept Requests</h2>
+                    <!-- The content will be generated by JavaScript -->
                 </div>
-                <!-- The content will be generated by JavaScript -->
             </div>
 
             <div class="card log-card">
                 <div class="log-header">
-                    <h2>Request Logs</h2>
+                    <h2><i class="fas fa-history"></i> Request Logs</h2>
                     <div class="log-actions">
                         <div class="search-wrapper">
                             <input type="text" id="searchInput" class="search-input" placeholder="Search logs...">
                         </div>
-                        <button id="clearLogs" class="button button-secondary">Clear</button>
+                        <button id="clearLogs" class="button button-secondary">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
                     </div>
                 </div>
                 <div class="log-container" id="logContainer">
@@ -155,7 +206,7 @@
     <!-- Mocks Modal -->
     <div id="mockModal" class="modal">
         <div class="modal-content">
-            <h3 id="mockModalTitle">Add API Mock</h3>
+            <h3 id="mockModalTitle"><i class="fas fa-code"></i> Add API Mock</h3>
             <div class="modal-body">
                 <div class="form-group">
                     <label>HTTP Method:</label>
@@ -174,7 +225,9 @@
                 
                 <div class="form-group">
                     <label>Query Parameters:</label>
-                    <button id="addQueryParam" class="button button-small">Add Parameter</button>
+                    <button id="addQueryParam" class="button button-small">
+                        <i class="fas fa-plus"></i> Add Parameter
+                    </button>
                     <div id="queryParamsContainer" class="params-container">
                         <!-- Query parameters will be added here dynamically -->
                     </div>
@@ -205,8 +258,12 @@
                 </div>
                 
                 <div class="modal-buttons">
-                    <button id="cancelMock" class="button button-secondary">Cancel</button>
-                    <button id="saveMock" class="button">Add</button>
+                    <button id="cancelMock" class="button button-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button id="saveMock" class="button">
+                        <i class="fas fa-save"></i> Add
+                    </button>
                 </div>
             </div>
         </div>
