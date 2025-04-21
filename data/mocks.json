@@ -84,5 +84,27 @@
     "queryParams": [],
     "bodyMatch": null,
     "createdAt": "2025-04-08T03:03:52.482Z"
+  },
+  {
+    "id": "411c8542-3fae-4cfa-b579-29e0a9089147",
+    "path": "/configs/v1",
+    "method": "PUT",
+    "responseBody": {},
+    "statusCode": 200,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-14T00:41:45.686Z"
+  },
+  {
+    "id": "983a418d-80c7-480d-9d60-647a98b56978",
+    "path": "customer/v1/user/accept-terms",
+    "method": "POST",
+    "responseBody": {},
+    "statusCode": 200,
+    "enabled": true,
+    "queryParams": [],
+    "bodyMatch": null,
+    "createdAt": "2025-04-14T11:33:37.962Z"
   }
 ]

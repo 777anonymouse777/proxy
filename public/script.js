@@ -142,11 +142,21 @@ function connectWebSocket() {
         try {
             const data = JSON.parse(event.data);
             
-            // Check if this is an intercepted request
-            if (data.interceptionId || data.type === 'intercepted-request') {
+            // Check if this is an intercepted request that hasn't been handled yet
+            if ((data.interceptionId || data.type === 'intercepted-request') && !data.isForwarded) {
                 console.log('Received intercepted request:', data.method, data.url, data.interceptionId);
+                
+                // Only handle in the intercepted requests UI but don't log yet
                 handleInterceptedRequest(data);
+                
+                // We'll only log this when it's been forwarded
+                return;
             }
+            
+            // Let forwarded intercepted responses through (they have both interceptionId and isForwarded)
+            console.log('Processing message:', data.method, data.url, 
+                        data.interceptionId ? `ID: ${data.interceptionId}` : '', 
+                        data.isForwarded ? '(forwarded)' : '');
             
             // Log non-intercepted requests for debugging
             if (data.tag === 'non-intercepted') {
@@ -221,7 +231,6 @@ function connectWebSocket() {
                             <span class="log-time">${timeString}</span>
                             <span class="log-method">${data.method}</span>
                             <span class="log-url">${data.url}</span>
-                            <span class="log-status">${data.status || ''}</span>
                         `;
                     } else {
                         // Regular request logs with inline mocked indicator
@@ -1465,7 +1474,7 @@ function updateMocksUIVisualState(interceptEnabled) {
         if (!disabledMsg) {
             disabledMsg = document.createElement('div');
             disabledMsg.className = 'mocks-disabled-message';
-            disabledMsg.innerHTML = '<p>Mocks are disabled while intercept mode is active</p>';
+            disabledMsg.innerHTML = '<p><i class="fas fa-exclamation-triangle"></i> Mocks are disabled while intercept mode is active. Please turn off intercept mode to use mocks.</p>';
             mocksCard.appendChild(disabledMsg);
         }
         
@@ -1973,6 +1982,9 @@ function forwardInterceptedRequest(requestId) {
         return;
     }
     
+    // Mark the request as forwarded so it will be logged
+    request.isForwarded = true;
+    
     // Close the modal if it's open
     const modal = document.getElementById('interceptModal');
     if (modal) {
@@ -2020,7 +2032,9 @@ function forwardInterceptedRequest(requestId) {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            customResponse: customResponseData
+            customResponse: customResponseData,
+            isForwarded: true,
+            shouldLog: true
         })
     })
     .then(response => response.json())
@@ -2512,6 +2526,13 @@ function renderLog(logEntry) {
         logItem.classList.add(`status-${statusClass}xx`);
     }
     
+    // Time - moved to leftmost position
+    const time = document.createElement('span');
+    time.className = 'time';
+    const date = new Date(logEntry.timestamp);
+    time.textContent = date.toLocaleTimeString();
+    logItem.appendChild(time);
+    
     // Method
     const method = document.createElement('span');
     method.className = `method ${logEntry.method.toLowerCase()}`;
@@ -2543,21 +2564,6 @@ function renderLog(logEntry) {
         mockedTag.title = 'This response was served from a mock';
         logItem.appendChild(mockedTag);
     }
-    
-    // Status code if available
-    if (logEntry.status) {
-        const status = document.createElement('span');
-        status.className = 'status';
-        status.textContent = logEntry.status;
-        logItem.appendChild(status);
-    }
-    
-    // Time
-    const time = document.createElement('span');
-    time.className = 'time';
-    const date = new Date(logEntry.timestamp);
-    time.textContent = date.toLocaleTimeString();
-    logItem.appendChild(time);
     
     // Add indicator for clickable logs with response body
     if (logEntry.responseBody) {

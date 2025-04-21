@@ -594,12 +594,13 @@ code {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 15px;
-    margin-bottom: 10px;
-    border-radius: 6px;
-    background-color: rgba(52, 152, 219, 0.05);
+    padding: 12px;
+    background: var(--card-bg);
     border: 1px solid var(--border-color);
-    transition: transform 0.2s, box-shadow 0.2s;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    transition: background-color 0.2s ease;
+    min-width: 0; /* Allow flex items to shrink below their minimum content size */
 }
 
 .mock-item:hover {
@@ -614,8 +615,10 @@ code {
 .mock-details {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
     flex: 1;
+    min-width: 0; /* Allow flex items to shrink below their minimum content size */
+    overflow: hidden; /* Hide overflow content */
 }
 
 .mock-method {
@@ -635,9 +638,14 @@ code {
 }
 
 .mock-path {
+    flex: 1;
+    min-width: 0; /* Allow text to shrink */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-color);
     font-family: 'Fira Code', monospace;
     font-size: 0.9em;
-    flex: 1;
 }
 
 .mock-status {
@@ -650,8 +658,9 @@ code {
 
 .mock-actions {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    gap: 8px;
+    margin-left: 15px;
+    flex-shrink: 0; /* Prevent actions from shrinking */
 }
 
 .mock-action-btn {
@@ -1490,6 +1499,13 @@ input[type="number"] {
     background-color: var(--hover-color);
 }
 
+.log-item .time {
+    width: 100px;
+    font-size: 0.85em;
+    color: var(--secondary-text-color);
+    margin-right: 10px;
+}
+
 .log-item .method {
     min-width: 60px;
     padding: 2px 6px;
@@ -1546,12 +1562,6 @@ input[type="number"] {
     color: #F44336;
 }
 
-.log-item .time {
-    margin-left: 10px;
-    color: var(--secondary-text-color);
-    font-size: 0.85em;
-}
-
 /* Mocked tag styling */
 .mocked-tag {
     background-color: #9c27b0;
@@ -1588,4 +1598,46 @@ input[type="number"] {
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+.mocks-disabled-message {
+    background-color: #f5deb3;
+    border-left: 4px solid #ff9800;
+    color: #333;
+    padding: 10px 15px;
+    margin: 10px 0;
+    font-weight: bold;
+    text-align: center;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    animation: fadeIn 0.3s ease;
+}
+
+.mocks-disabled-message p {
+    margin: 0;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.mocks-click-blocker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+    cursor: not-allowed;
+    border-radius: 10px;
+    animation: fadeIn 0.3s ease;
+}
+
+.card.disabled {
+    opacity: 0.7;
+    position: relative;
+    border: 1px solid #f39c12;
+    box-shadow: 0 0 10px rgba(243, 156, 18, 0.2);
 }

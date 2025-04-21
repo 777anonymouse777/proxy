@@ -980,7 +980,7 @@ app.get('/preview-response/:id', async (req, res) => {
 // Add this to your proxy.js file where you handle request forwarding
 app.post('/forward-intercepted-request/:id', (req, res) => {
     const requestId = req.params.id;
-    const { customResponse } = req.body;
+    const { customResponse, isForwarded, shouldLog } = req.body;
     
     try {
         // Get the intercepted request
@@ -1048,13 +1048,30 @@ app.post('/forward-intercepted-request/:id', (req, res) => {
                 responseBody: typeof responseBody === 'object' ? JSON.stringify(responseBody, null, 2) : responseBody,
                 responseHeaders: customResponse.headers || {},
                 tag: 'custom-response',
-                isResponse: true
+                isResponse: true,
+                isForwarded: true,
+                interceptionId: requestId
             });
             
             return res.json({ success: true });
         } else {
             // Forward without custom response
             interceptQueue.forwardRequest(requestId);
+            
+            // Create a log entry for the forwarded request
+            if (shouldLog) {
+                console.log(`Logging forwarded intercepted request ${requestId}`);
+                broadcastLog({
+                    timestamp: new Date().toISOString(),
+                    method: interceptedRequest.method,
+                    url: interceptedRequest.url,
+                    status: 200, // We don't know the actual status yet
+                    tag: 'forwarded-request',
+                    isForwarded: true,
+                    interceptionId: requestId
+                });
+            }
+            
             return res.json({ success: true });
         }
     } catch (error) {
@@ -1129,8 +1146,8 @@ function setupProxyMiddleware() {
                     // Check if method matches (ALL method matches any request method)
                     if (rule.method && rule.method !== 'ALL' && rule.method !== req.method) return false;
                     
-                    // Match exact path or with wildcard support
-                    const pathMatches = rule.path === req.path || 
+                    // Match path using contains approach or with wildcard support
+                    const pathMatches = req.path.includes(rule.path) || 
                         (rule.path.endsWith('*') && req.path.startsWith(rule.path.slice(0, -1)));
                     
                     if (pathMatches) {

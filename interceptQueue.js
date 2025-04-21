@@ -289,7 +289,10 @@ class InterceptQueue {
             method: request.method,
             url: request.url,
             status: response.status,
-            tag: 'forwarded'
+            tag: 'forwarded',
+            isForwarded: true,
+            interceptionId: id,
+            responseBody: typeof response.data === 'object' ? JSON.stringify(response.data, null, 2) : response.data.toString().substring(0, 5000)
           });
         }
 
@@ -314,7 +317,10 @@ class InterceptQueue {
             method: request.method,
             url: request.url,
             status: error.response ? error.response.status : 'Error',
-            tag: 'forwarded'
+            tag: 'forwarded',
+            isForwarded: true,
+            interceptionId: id,
+            error: error.message
           });
         }
 

@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "e58e1a3c-d590-4102-9ca6-e9b71fba7e20",
+    "method": "PUT",
+    "path": "/configs/v1",
+    "enabled": true,
+    "createdAt": "2025-04-14T00:41:45.688Z",
+    "updatedAt": "2025-04-14T11:35:32.731Z"
+  },
+  {
+    "id": "6b787000-39f1-44f7-99d7-4af8ab8b81e6",
+    "method": "POST",
+    "path": "customer/v1/user/accept-terms",
+    "enabled": true,
+    "createdAt": "2025-04-14T11:33:37.966Z"
+  }
+]
